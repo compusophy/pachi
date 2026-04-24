@@ -24,8 +24,8 @@ const slotWidth = (W - 24) / SLOTS;
 const pegR      = Math.max(2.5, slotWidth * 0.13);
 const ballR     = Math.max(4, pegR * PHI);
 const slotsH    = Math.max(36, slotWidth * PHI);
-const rowSpacing = Math.max(slotWidth * 0.78, (H - slotsH - 50) / ROWS);
-const topY      = 24;
+const topY      = 55;     // mirror pachi.js spawn-zone bump
+const rowSpacing = Math.max(slotWidth * 0.78, (H - slotsH - topY - 26) / ROWS);
 const slotsY    = topY + ROWS * rowSpacing + 6;
 
 // Multiplier table — for tier breakdown

@@ -180,9 +180,13 @@ export function mount(slot, ctx) {
     // Slot catch container = golden PORTRAIT per box (taller than wide).
     // height = width * φ.
     slotsH = Math.max(36, slotWidth * PHI);
-    // Use remaining vertical space for peg field; enforce minimum row spacing
-    const rowSpacing = Math.max(slotWidth * 0.78, (H - slotsH - 50) / ROWS);
-    topY = 24;
+    // Spawn-zone height — gives balls room to be visible BEFORE they enter the
+    // peg field. Without this, balls spawn off-canvas and get clipped at the
+    // top edge.
+    topY = 55;  // ≈ 2 × ballR + Fibonacci jitter band, well below canvas top
+    // Use remaining vertical space for peg field; subtract the new top zone
+    // and the slot region from the budget so spacing math accounts for both.
+    const rowSpacing = Math.max(slotWidth * 0.78, (H - slotsH - topY - 26) / ROWS);
     slotsY = topY + ROWS * rowSpacing + 6;
 
     for (let r = 0; r < ROWS; r++) {
@@ -763,6 +767,8 @@ const PACHI_CSS = `
   display: flex; align-items: center; justify-content: center;
   margin: 5px 0 13px;
   min-height: 89px;
+  position: relative;
+  z-index: 5;            /* above the canvas/balls in case of any overlap */
 }
 .pachi-total {
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
