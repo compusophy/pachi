@@ -470,6 +470,7 @@ export function mount(slot, ctx) {
     // payout = stake_per_ball × totalBps / 10_000
     const payoutRaw = (stakePerBallRaw * BigInt(runningTotalBps)) / 10_000n;
     totalEl.textContent = fmtUSD(payoutRaw);
+    applyGoldIntensity(payoutRaw, runningStakeRaw);
     totalEl.classList.add("flash");
     if (totalEl._flashT) clearTimeout(totalEl._flashT);
     totalEl._flashT = setTimeout(() => totalEl.classList.remove("flash"), 220);
@@ -516,13 +517,47 @@ export function mount(slot, ctx) {
 
   function finishRound() {
     btnEl.disabled = false;
-    // big-flash if payout >= 3× stake committed
     const payoutRaw = (stakePerBallRaw * BigInt(runningTotalBps)) / 10_000n;
+    // Lock final gold intensity (already applied per ball, but pulse on big wins)
     if (runningStakeRaw > 0n && payoutRaw >= runningStakeRaw * 3n) {
       totalEl.classList.add("big");
       setTimeout(() => totalEl.classList.remove("big"), 900);
     }
     ctx.refreshBalance();
+  }
+
+  // Continuous gold intensity scaled by log_φ(payout/wagered).
+  // Each φ-step in return adds a Fibonacci-radius glow layer.
+  // Below 1.0× return: white (no gold). At φ¹ (1.62×): subtle gold.
+  // At φ⁵ (~11×): rich gold. At φ⁸ (~47×): blazing — caps here.
+  function applyGoldIntensity(payoutRaw, stakeRaw) {
+    if (stakeRaw === 0n) return;
+    const ratio = Number(payoutRaw) / Number(stakeRaw);
+    if (ratio <= 1) {
+      // Loss or break-even — clean white, no glow
+      totalEl.style.color = "#fff";
+      totalEl.style.textShadow = "none";
+      return;
+    }
+    const intensitySteps = Math.log(ratio) / Math.log(PHI);   // 0..∞
+    const t = Math.min(intensitySteps / 8, 1);                // cap at φ⁸
+    // Color: stays HSL 50° (gold), lightness slides from white-gold toward
+    // saturated bullion as t grows.
+    const lightness = 100 - t * 48;                            // 100 → 52
+    totalEl.style.color = `hsl(50, 100%, ${lightness}%)`;
+    // Glow: 4 layers, sizes scale by Fibonacci, opacities by inverse golden powers.
+    const s = (a, b) => a + (b - a) * t;
+    totalEl.style.textShadow = [
+      `0 0 ${s(2, 13).toFixed(1)}px  rgba(255, 247, 194, ${s(0, 0.85).toFixed(2)})`,
+      `0 0 ${s(5, 34).toFixed(1)}px  rgba(255, 214, 10,  ${s(0, 0.62).toFixed(2)})`,
+      `0 0 ${s(13, 89).toFixed(1)}px rgba(255, 140, 0,   ${s(0, 0.38).toFixed(2)})`,
+      `0 0 ${s(21, 144).toFixed(1)}px rgba(255, 100, 0,   ${s(0, 0.24).toFixed(2)})`,
+    ].join(", ");
+  }
+
+  function clearGoldIntensity() {
+    totalEl.style.color = "";
+    totalEl.style.textShadow = "";
   }
 
   // initial stake read
@@ -575,6 +610,7 @@ export function mount(slot, ctx) {
     runningTotalBps = 0;
     totalEl.classList.remove("big");
     totalEl.textContent = "—";
+    clearGoldIntensity();
     btnEl.disabled = true;
 
     const n = selectedN;
