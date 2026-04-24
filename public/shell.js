@@ -317,5 +317,9 @@ menuEl.addEventListener("click", async (e) => {
   const mod = await import("./cards/pachi.js");
   mod.mount(slot, ctx);
 
-  setInterval(() => ctx.refreshBalance(), 4000);
+  // No background polling — balance refresh is event-driven (after tx
+  // confirms). Polling spoiled the round outcome by updating the HUD
+  // before the balls visually landed. The card calls ctx.refreshBalance()
+  // in finishRound(); claim-daily calls it after its tx; onboarding
+  // calls it once at startup. That's enough.
 })();
