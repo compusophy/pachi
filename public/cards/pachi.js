@@ -8,7 +8,9 @@ import * as Tone from "https://esm.sh/tone@15.0.4";
 // Diamond address — stable across all future facet upgrades. Don't change
 // this when we modify game logic; bump appVersion (see project_pachi_versioning).
 const PACHI_ADDR = "0x71e767bf661d6294c88953d640f0fc792a4c5086";
-const TOKEN_ADDR = "0x20c0000000000000000000000000000000000001"; // AlphaUSD
+// Game stake token = PachiUSD (Phase 2). Approve goes here; gas (paid in
+// AlphaUSD) is set on the chain config in shell.js, not here.
+const TOKEN_ADDR = "0x576da0a989d574a3f9568007daceea919db6c53b"; // PachiUSD
 const MAX_UINT256 = (1n << 256n) - 1n;
 
 const PACHI_ABI = [

@@ -7,9 +7,11 @@ import { nonceManager } from "https://esm.sh/viem@2.48.4/nonce";
 import { tempoModerato } from "https://esm.sh/viem@2.48.4/chains";
 import { tempoActions } from "https://esm.sh/viem@2.48.4/tempo";
 
-// AlphaUSD pays gas (Tempo's fee-token system), small balance from faucet.
+// AlphaUSD pays gas (Tempo's fee-token system requires a system stable;
+// PachiUSD is NOT a valid fee token). Topped up free from the faucet.
 export const ALPHA_USD = "0x20c0000000000000000000000000000000000001";
-// PachiUSD is the GAME currency, minted to registered users via OnboardingFacet.
+// PachiUSD is the GAME stake — what's approved + transferred for play().
+// Minted to registered users via OnboardingFacet.
 export const PACHI_USD = "0x576da0a989d574a3f9568007daceea919db6c53b";
 // Pachi diamond — stable address across all future facet upgrades.
 export const PACHI_DIAMOND = "0x71e767bf661d6294c88953d640f0fc792a4c5086";
@@ -19,7 +21,8 @@ export const APP_VERSION = 2;
 const KEY_STORAGE = "pachi:burnerKey:v1";
 
 // `TOKEN` left exported for back-compat with cards/pachi.js — points at the
-// game stake token (now PachiUSD), which is what the card needs to approve.
+// game stake token (PachiUSD), which is what the card approves + spends.
+// Gas is paid in AlphaUSD, set on the chain config below.
 export const TOKEN = PACHI_USD;
 
 let priv = localStorage.getItem(KEY_STORAGE);
@@ -34,7 +37,10 @@ const account = privateKeyToAccount(priv, { nonceManager });
 
 const client = createClient({
   account,
-  chain: tempoModerato.extend({ feeToken: TOKEN }),
+  // Gas is paid in AlphaUSD (a system fee token). PachiUSD is the game
+  // stake, NOT a valid fee token — using it here gets "invalid fee token"
+  // reverts on every tx.
+  chain: tempoModerato.extend({ feeToken: ALPHA_USD }),
   transport: http(),
 })
   .extend(publicActions)
