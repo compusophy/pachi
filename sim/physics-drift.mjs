@@ -117,14 +117,25 @@ function simulateBall(path) {
       ball.currentRow = newRow;
       const bit = (path >> newRow) & 1;
       if (bit) ball.logicalCol++;
-      const targetX = W / 2 + (ball.logicalCol - (newRow + 1) / 2) * slotWidth;
+      ball.targetX = W / 2 + (ball.logicalCol - (newRow + 1) / 2) * slotWidth;
       const nextRowY = topY + (newRow + 1) * rowSpacing;
       const dy = Math.max(rowSpacing * 0.5, nextRowY - ball.position.y);
       const vY = Math.max(1.4, ball.velocity.y);
       const timeToNext = dy / vY;
-      const rawVx = (targetX - ball.position.x) / timeToNext;
+      const rawVx = (ball.targetX - ball.position.x) / timeToNext;
       const vx   = Math.max(-3.5, Math.min(3.5, rawVx));
       Body.setVelocity(ball, { x: vx, y: vY });
+    }
+
+    // Continuous steering — gentle pull toward the active target each frame.
+    // Without this, peg bounces between rows can drift the ball off-aim and
+    // the next row's recalc is stuck catching up.
+    if (ball.targetX != null && ball.currentRow >= 0) {
+      const dx = ball.targetX - ball.position.x;
+      if (Math.abs(dx) > 0.5) {
+        // Force scaled by mass so behavior is independent of density.
+        Body.applyForce(ball, ball.position, { x: dx * 0.000018 * ball.mass, y: 0 });
+      }
     }
 
     // Stuck detector

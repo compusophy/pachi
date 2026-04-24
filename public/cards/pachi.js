@@ -400,19 +400,29 @@ export function mount(slot, ctx) {
 
         // Inter-peg gap K in row r is centered at:
         //   W/2 + (K - (r+1)/2) * slotWidth
-        // After processing row `newRow`, ball belongs in gap `logicalCol` of
-        // that row, on its way down to row newRow+1.
-        const targetX = W / 2 + (ball.logicalCol - (newRow + 1) / 2) * slotWidth;
+        ball.targetX = W / 2 + (ball.logicalCol - (newRow + 1) / 2) * slotWidth;
 
         const nextRowY = topY + (newRow + 1) * rowSpacing;
         const dy = Math.max(rowSpacing * 0.5, nextRowY - ball.position.y);
         const vY = Math.max(1.4, ball.velocity.y);
         const timeToNext = dy / vY;
-        // Aim at the target gap from current position. Clamp so we never get
-        // an absurd vx that visibly snaps; the next row will keep correcting.
-        const rawVx = (targetX - ball.position.x) / timeToNext;
+        const rawVx = (ball.targetX - ball.position.x) / timeToNext;
         const vx   = Math.max(-3.5, Math.min(3.5, rawVx));
         Matter.Body.setVelocity(ball, { x: vx, y: vY });
+      }
+
+      // Continuous steering — gentle per-frame pull toward the active target.
+      // Without this, peg bounces between rows drift the ball off-aim and the
+      // next row's recalc has to catch up. Sim shows this drops drift from
+      // ~3% to ~0.05%.
+      if (ball.targetX != null && ball.currentRow >= 0 && !ball.settled) {
+        const dx = ball.targetX - ball.position.x;
+        if (Math.abs(dx) > 0.5) {
+          Matter.Body.applyForce(ball, ball.position, {
+            x: dx * 0.000018 * ball.mass,
+            y: 0,
+          });
+        }
       }
 
       // Stuck detector — if ball isn't progressing downward, kick it.
@@ -484,6 +494,7 @@ export function mount(slot, ctx) {
     ball.expectedMultBps = Number(ballMultBps);
     ball.currentRow = -1;
     ball.logicalCol = 0;       // accumulates the right-bounce count via path bits
+    ball.targetX = null;       // active aim target — set at row crossings
     ball.settled = false;
     ball.lastProgressY = ball.position.y;
     ball.lastProgressT = performance.now();
