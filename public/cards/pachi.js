@@ -240,7 +240,15 @@ export function mount(slot, ctx) {
   let lastLandAudio = 0;
 
   async function ensureAudio() {
-    if (audio) return audio;
+    if (audio) {
+      // Mobile sleep / tab background suspends the AudioContext. Resume so
+      // sound returns when the user comes back. Without this, audio is silent
+      // forever after the first sleep cycle.
+      if (Tone.context && Tone.context.state === "suspended") {
+        try { await Tone.context.resume(); } catch {}
+      }
+      return audio;
+    }
     await Tone.start();
     const dest = new Tone.Limiter(-1).toDestination();
     const click = new Tone.MembraneSynth({
@@ -664,6 +672,17 @@ export function mount(slot, ctx) {
     approvedSent = true;
   }
 
+  // Wrap a promise so it can never hang the UI longer than `ms`. If a tx
+  // is sent but the receipt request stalls (typical after mobile sleep
+  // suspends the network), this surfaces a clean error instead of leaving
+  // btnEl.disabled forever.
+  function withTimeout(p, ms, label) {
+    return Promise.race([
+      p,
+      new Promise((_, reject) => setTimeout(() => reject(new Error(label + " timed out — try again")), ms)),
+    ]);
+  }
+
   async function play() {
     if (btnEl.disabled) return;
     // Pre-flight version check — abort if the deployed diamond is ahead of
@@ -684,10 +703,16 @@ export function mount(slot, ctx) {
 
     try {
       await ensureApproval();
-      const hash = await writeWithRetry({
-        address: PACHI_ADDR, abi: PACHI_ABI, functionName: "play", args: [BigInt(n)],
-      });
-      const receipt = await ctx.client.waitForTransactionReceipt({ hash });
+      const hash = await withTimeout(
+        writeWithRetry({
+          address: PACHI_ADDR, abi: PACHI_ABI, functionName: "play", args: [BigInt(n)],
+        }),
+        45_000, "tx submit"
+      );
+      const receipt = await withTimeout(
+        ctx.client.waitForTransactionReceipt({ hash }),
+        60_000, "receipt"
+      );
       const events = ctx.parseEventLogs({ abi: PACHI_ABI, eventName: "Played", logs: receipt.logs });
       if (!events.length) throw new Error("no Played event");
       const { paths, ballMults } = events[0].args;
@@ -743,11 +768,27 @@ export function mount(slot, ctx) {
   });
   ro.observe(board);
 
+  // Mobile sleep / tab background recovery. When the tab becomes visible
+  // again we (a) resume the AudioContext if iOS/Chrome suspended it, and
+  // (b) un-stick the DROP button if a prior in-flight tx promise stalled
+  // (no balls present means there's nothing legitimately in flight).
+  function onVisibilityChange() {
+    if (document.visibilityState !== "visible") return;
+    if (Tone.context && Tone.context.state === "suspended") {
+      Tone.context.resume().catch(() => {});
+    }
+    if (btnEl.disabled && balls.length === 0 && pendingDrops === 0) {
+      btnEl.disabled = false;
+    }
+  }
+  document.addEventListener("visibilitychange", onVisibilityChange);
+
   setN(1);
 
   return () => {
     mounted = false;
     ro.disconnect();
+    document.removeEventListener("visibilitychange", onVisibilityChange);
     Matter.Engine.clear(engine);
     if (audio) {
       try { audio.click.dispose(); audio.land.dispose(); audio.jackpot.dispose(); audio.dest.dispose(); } catch {}
