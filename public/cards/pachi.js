@@ -271,7 +271,7 @@ export function mount(slot, ctx) {
     // slot multiplier labels — sized to fit the slot WIDTH (since slots are
     // now portrait, text would overflow if sized to height). Centered vertically.
     const labelSize = Math.min(slotsH * 0.36, slotWidth * 0.4);
-    cx.font = `800 ${Math.floor(labelSize)}px 'JetBrains Mono', monospace`;
+    cx.font = `700 ${Math.floor(labelSize)}px 'IBM Plex Mono', ui-monospace, monospace`;
     cx.textAlign = "center"; cx.textBaseline = "middle";
     for (let s = 0; s < SLOTS; s++) {
       const b = slotBounds[s];
@@ -694,7 +694,7 @@ const PACHI_CSS = `
   position: absolute; inset: 0;
   display: flex; flex-direction: column; align-items: center; justify-content: space-between;
   padding: 55px 21px max(21px, env(safe-area-inset-bottom));
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
   color: #fff;
   background:
     radial-gradient(144% 89% at 50% -21%, rgba(255,200,90,0.05), transparent 55%),
@@ -707,11 +707,11 @@ const PACHI_CSS = `
   min-height: 89px;
 }
 .pachi-total {
-  font-family: 'Inter', sans-serif;
-  font-variation-settings: "wght" 800;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-weight: 700;
   /* Anchored to viewport via 1/φ² ≈ 0.382 of a notional board width band. */
   font-size: clamp(55px, calc(34vw / 2.618), 144px);
-  line-height: 1; letter-spacing: -0.05em;
+  line-height: 1; letter-spacing: -0.04em;
   font-feature-settings: "tnum" 1;
   transition: transform 0.21s ease, color 0.21s ease, text-shadow 0.21s ease;
   color: #fff;
@@ -759,7 +759,7 @@ const PACHI_CSS = `
   border: none;
   background: transparent;
   color: rgba(255,255,255,0.55);
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
   font-size: 13px; font-weight: 700;
   letter-spacing: 0.06em;
   cursor: pointer;
@@ -778,7 +778,7 @@ const PACHI_CSS = `
 /* DROP button — golden landscape: width:height = φ:1.
    Width 233 (Fibonacci), height = 233/1.618 ≈ 144 (also Fibonacci). */
 .pachi-btn {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
   font-weight: 800;
   font-size: 21px;
   letter-spacing: 0.382em;     /* 1/φ² */

@@ -251,9 +251,9 @@ export function mount(slot, ctx) {
       intensity = Math.min(1, Math.log(visualAlt) / 4.5); // ~1.0 at ~90x
       glitch    = Math.max(0, (visualAlt - 5) / 25);      // kicks past 5x
       multEl.textContent = formatMult(visualAlt);
-      // variable-font weight grows with altitude
-      const w = Math.round(200 + Math.min(700, intensity * 700));
-      multEl.style.fontVariationSettings = `"wght" ${w}`;
+      // weight steps across IBM Plex Mono's available stops with altitude
+      const w = intensity > 0.66 ? 700 : intensity > 0.33 ? 500 : 400;
+      multEl.style.fontWeight = String(w);
       // tilt slightly past 10x
       const tilt = Math.min(8, Math.max(0, (visualAlt - 10) * 0.4));
       multEl.style.transform = `rotate(${-tilt}deg)`;
@@ -393,7 +393,7 @@ export function mount(slot, ctx) {
     glitch = 0;
     crashed = 0;
     multEl.textContent = "1.00";
-    multEl.style.fontVariationSettings = `"wght" 200`;
+    multEl.style.fontWeight = "300";
     multEl.style.transform = "";
     subEl.textContent = "tap to lift";
     btnEl.textContent = "PLAY";
@@ -446,7 +446,7 @@ const WAVE_CSS = `
   grid-template-rows: auto 1fr auto;
   padding: 56px 24px max(56px, env(safe-area-inset-bottom));
   z-index: 1;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
   color: #fff;
   pointer-events: none;
 }
@@ -472,20 +472,20 @@ const WAVE_CSS = `
   pointer-events: none;
 }
 .wave-mult {
-  font-family: 'Inter', sans-serif;
-  font-variation-settings: "wght" 200;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-weight: 300;
   font-size: clamp(120px, 32vw, 280px);
   line-height: 0.85;
   letter-spacing: -0.06em;
   font-feature-settings: "tnum" 1;
-  transition: font-variation-settings 0.05s linear;
+  transition: font-weight 0.05s linear;
   text-shadow: 0 0 50px rgba(0,0,0,0.4);
-  will-change: font-variation-settings, transform;
+  will-change: font-weight, transform;
 }
 .wave-mult .x {
   font-size: 0.4em;
   margin-left: 0.05em;
-  font-variation-settings: "wght" 300;
+  font-weight: 300;
   opacity: 0.6;
 }
 .wave-sub {
@@ -504,7 +504,7 @@ const WAVE_CSS = `
   display: flex; flex-direction: column; align-items: center; gap: 12px;
 }
 .wave-btn {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
   font-weight: 700;
   font-size: 18px;
   letter-spacing: 0.32em;

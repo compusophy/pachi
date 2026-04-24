@@ -16,7 +16,7 @@ html, body {
   height: 100dvh;
   background: var(--bg);
   color: var(--ink);
-  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
   overflow: hidden;
   overscroll-behavior: none;
   user-select: none;
@@ -52,7 +52,7 @@ body { display: flex; flex-direction: column; }
    inner two layers for a subtle "lit" response. */
 .logo-wrap { position: relative; }
 .logo {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
   font-weight: 800;
   font-size: 13px;
   letter-spacing: 0.236em;     /* 1/φ³ */
@@ -98,7 +98,7 @@ body { display: flex; flex-direction: column; }
   border: none;
   padding: 8px 13px;
   text-align: left;
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
   font-size: 13px;
   letter-spacing: 0.034em;
   text-transform: lowercase;
@@ -206,8 +206,8 @@ body { display: flex; flex-direction: column; }
   margin-bottom: 5px;
 }
 .stat-val {
-  font-family: 'Inter', sans-serif;
-  font-variation-settings: "wght" 800;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-weight: 700;
   font-size: 21px;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
@@ -235,7 +235,7 @@ body { display: flex; flex-direction: column; }
   border-bottom: 1px solid rgba(255,255,255,0.03);
   white-space: nowrap;
 }
-.players-table .addr { font-family: 'JetBrains Mono', monospace; opacity: 0.85; }
+.players-table .addr { font-family: 'IBM Plex Mono', ui-monospace, monospace; opacity: 0.85; }
 .players-table .pos { color: #a4ffae; }
 .players-table .neg { color: #ff7b6b; }
 
