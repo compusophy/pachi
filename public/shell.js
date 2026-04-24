@@ -1,5 +1,5 @@
 // shell — per-user wallet (generated once, persisted in localStorage),
-// auto-funds via /api/faucet on first load, mounts the active card.
+// single onboarding flow that funds + verifies before mounting the card.
 
 import { createClient, http, publicActions, walletActions, parseEventLogs } from "https://esm.sh/viem@2.48.4";
 import { privateKeyToAccount, generatePrivateKey } from "https://esm.sh/viem@2.48.4/accounts";
@@ -9,7 +9,6 @@ import { tempoActions } from "https://esm.sh/viem@2.48.4/tempo";
 export const TOKEN = "0x20c0000000000000000000000000000000000001"; // AlphaUSD, 6 dec
 const KEY_STORAGE = "pachi:burnerKey:v1";
 
-// Per-user burner key — generated once on first visit, persisted in localStorage.
 let priv = localStorage.getItem(KEY_STORAGE);
 if (!priv) {
   priv = generatePrivateKey();
@@ -36,6 +35,7 @@ const balEl = document.getElementById("bal");
 
 const fmtUSD = (raw) =>
   `$${(Number(raw) / 1e6).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
 async function getBalance() {
   return client.readContract({
@@ -43,15 +43,12 @@ async function getBalance() {
   });
 }
 
-async function refreshBalance() {
-  try {
-    balEl.textContent = fmtUSD(await getBalance());
-  } catch {
-    balEl.textContent = "rpc err";
-  }
+function setBal(text, opts = {}) {
+  balEl.textContent = text;
+  balEl.style.cursor = opts.clickable ? "pointer" : "";
 }
 
-function toast(msg, ms = 2200) {
+function toast(msg, ms = 2400) {
   const el = document.createElement("div");
   el.className = "toast";
   el.textContent = msg;
@@ -63,37 +60,72 @@ function toast(msg, ms = 2200) {
   }, ms);
 }
 
-// First-load: if balance is 0, ask /api/faucet to fund this address.
-async function ensureFunded() {
-  const b = await getBalance();
-  if (b > 0n) return;
-  try {
-    balEl.textContent = "funding…";
-    const r = await fetch("/api/faucet", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ address: account.address }),
-    });
-    if (!r.ok) {
-      const txt = await r.text().catch(() => "");
-      throw new Error(`faucet ${r.status}: ${txt.slice(0, 80)}`);
+// Single-flight onboarding. If already funded (returning visitor), no API
+// call. Otherwise: POST /api/faucet (which now waits for the funding tx to
+// confirm before responding), then poll the chain until the balance shows up.
+let onboarding = null;
+async function onboard() {
+  if (onboarding) return onboarding;
+  onboarding = (async () => {
+    try {
+      // Already funded? (cached wallet, returning visitor, or refresh after fund)
+      let bal = await getBalance();
+      if (bal > 0n) {
+        setBal(fmtUSD(bal));
+        return true;
+      }
+
+      setBal("loading…");
+
+      const r = await fetch("/api/faucet", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address: account.address }),
+      });
+
+      // 200 (synchronously confirmed), 202 (pending — keep polling), or error.
+      if (!r.ok && r.status !== 202) {
+        const txt = await r.text().catch(() => "");
+        throw new Error(`faucet ${r.status}${txt ? ": " + txt.slice(0, 100) : ""}`);
+      }
+
+      // Server already waited for the receipt on 200, but the RPC view can lag
+      // a beat. On 202, the tx is pending. Poll until the balance is visible.
+      for (let i = 0; i < 24; i++) {
+        bal = await getBalance();
+        if (bal > 0n) {
+          setBal(fmtUSD(bal));
+          return true;
+        }
+        await sleep(500);
+      }
+      throw new Error("funding didn't land in time");
+    } catch (err) {
+      console.error("onboard failed:", err);
+      setBal("tap to retry", { clickable: true });
+      toast(err.shortMessage || err.message || "onboarding failed");
+      return false;
+    } finally {
+      onboarding = null;
     }
-    // Faucet RPC returns immediately but funding tx needs a block — poll briefly.
-    for (let i = 0; i < 8; i++) {
-      await new Promise((res) => setTimeout(res, 600));
-      if ((await getBalance()) > 0n) break;
-    }
-  } catch (err) {
-    toast(`faucet failed: ${err.message}`);
-  }
+  })();
+  return onboarding;
 }
 
-const ctx = { client, account, parseEventLogs, refreshBalance, toast };
+balEl.addEventListener("click", () => {
+  if (balEl.textContent === "tap to retry") onboard();
+});
+
+const ctx = {
+  client, account, parseEventLogs, toast,
+  refreshBalance: async () => {
+    try { setBal(fmtUSD(await getBalance())); } catch {}
+  },
+};
 
 (async () => {
-  await refreshBalance();
-  await ensureFunded();
-  await refreshBalance();
+  const ok = await onboard();
+  if (!ok) return;  // user can tap balance to retry
 
   const slot = document.createElement("div");
   slot.style.cssText = "position:absolute;inset:0;";
@@ -101,5 +133,5 @@ const ctx = { client, account, parseEventLogs, refreshBalance, toast };
   const mod = await import("./cards/pachi.js");
   mod.mount(slot, ctx);
 
-  setInterval(refreshBalance, 4000);
+  setInterval(() => ctx.refreshBalance(), 4000);
 })();

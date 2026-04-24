@@ -1,20 +1,39 @@
-// /api/faucet — calls Tempo Moderato testnet's tempo_fundAddress for a player
-// address. Rate-limits per IP (best-effort, in-memory) so casual crawlers don't
-// drain the testnet faucet via this proxy.
+// /api/faucet — calls Tempo Moderato testnet's tempo_fundAddress and waits
+// for the funding tx to confirm before returning. Idempotent: if the address
+// already has balance, returns immediately without re-funding.
 //
 // Vercel serverless function (Node runtime).
 
 const RPC = "https://rpc.moderato.tempo.xyz";
-const COOLDOWN_MS = 60_000;          // one fund per IP per minute
-const MAX_PER_DAY = 6;               // best-effort soft cap per IP per day
+const ALPHA_USD = "0x20c0000000000000000000000000000000000001";
 
-// In-memory state — resets on cold start, fine for testnet.
-const seen = new Map(); // ip → { last: ms, dayStart: ms, dayCount: n }
+async function rpc(method, params) {
+  const r = await fetch(RPC, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+  });
+  if (!r.ok) throw new Error(`rpc http ${r.status}`);
+  const j = await r.json();
+  if (j.error) throw new Error(j.error.message || JSON.stringify(j.error));
+  return j.result;
+}
 
-function getIp(req) {
-  const xff = req.headers["x-forwarded-for"];
-  if (typeof xff === "string" && xff.length) return xff.split(",")[0].trim();
-  return req.socket?.remoteAddress || "unknown";
+async function balanceOf(address) {
+  const data = "0x70a08231" + address.slice(2).toLowerCase().padStart(64, "0");
+  const result = await rpc("eth_call", [{ to: ALPHA_USD, data }, "latest"]);
+  return BigInt(result);
+}
+
+async function waitForReceipt(hash, deadlineMs) {
+  while (Date.now() < deadlineMs) {
+    try {
+      const r = await rpc("eth_getTransactionReceipt", [hash]);
+      if (r && r.blockNumber) return r;
+    } catch {}
+    await new Promise((res) => setTimeout(res, 400));
+  }
+  return null;
 }
 
 export default async function handler(req, res) {
@@ -23,50 +42,42 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "method not allowed" });
   }
 
-  // Vercel parses JSON body for us when content-type is application/json.
-  const body = req.body && typeof req.body === "object"
-    ? req.body
-    : (() => { try { return JSON.parse(req.body || "{}"); } catch { return {}; } })();
-  const address = (body.address || "").toString();
+  const body = typeof req.body === "string"
+    ? (() => { try { return JSON.parse(req.body || "{}"); } catch { return {}; } })()
+    : (req.body || {});
+  const address = String(body.address || "");
 
   if (!/^0x[0-9a-fA-F]{40}$/.test(address)) {
     return res.status(400).json({ error: "bad address" });
   }
 
-  const ip = getIp(req);
-  const now = Date.now();
-  const rec = seen.get(ip) || { last: 0, dayStart: now, dayCount: 0 };
-
-  if (now - rec.dayStart > 24 * 60 * 60 * 1000) {
-    rec.dayStart = now;
-    rec.dayCount = 0;
-  }
-  if (now - rec.last < COOLDOWN_MS) {
-    return res.status(429).json({ error: "cooldown", retryInSec: Math.ceil((COOLDOWN_MS - (now - rec.last)) / 1000) });
-  }
-  if (rec.dayCount >= MAX_PER_DAY) {
-    return res.status(429).json({ error: "daily cap" });
-  }
-
-  let upstream;
+  // Idempotency: if already funded, skip the faucet call.
   try {
-    const r = await fetch(RPC, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tempo_fundAddress", params: [address] }),
-    });
-    upstream = await r.json();
+    const bal = await balanceOf(address);
+    if (bal > 0n) {
+      return res.status(200).json({ ok: true, alreadyFunded: true, balance: bal.toString() });
+    }
   } catch (err) {
-    return res.status(502).json({ error: "rpc unreachable", detail: String(err).slice(0, 120) });
+    // Don't block on the balance check — continue to funding.
   }
 
-  if (upstream.error) {
-    return res.status(502).json({ error: "rpc error", detail: upstream.error });
+  // Fund.
+  let txs;
+  try {
+    txs = await rpc("tempo_fundAddress", [address]);
+  } catch (err) {
+    return res.status(502).json({ error: "fund rpc failed", detail: String(err).slice(0, 200) });
   }
 
-  rec.last = now;
-  rec.dayCount += 1;
-  seen.set(ip, rec);
+  // Wait for the last funding tx to land. ~7s budget — leaves headroom under
+  // the 10s Vercel function ceiling.
+  const deadline = Date.now() + 7000;
+  const receipt = await waitForReceipt(txs[txs.length - 1], deadline);
 
-  return res.status(200).json({ ok: true, txs: upstream.result });
+  if (!receipt) {
+    // Confirmed enqueue, just hadn't landed in 7s. Frontend will keep polling.
+    return res.status(202).json({ ok: true, pending: true, txs });
+  }
+
+  return res.status(200).json({ ok: true, txs, blockNumber: receipt.blockNumber });
 }
