@@ -92,6 +92,7 @@ function simulateBall(path) {
   const startX = W / 2 + (Math.random() - 0.5) * slotWidth * 0.5;
   const ball = Bodies.circle(startX, topY - ballR * 2 - Math.random() * 16, ballR, {
     restitution: 0.32, friction: 0.002, frictionAir: 0.005, density: 0.025,
+    collisionFilter: { group: -1 },
     label: "ball",
   });
   ball.path = path;

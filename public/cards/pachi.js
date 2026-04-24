@@ -362,6 +362,8 @@ export function mount(slot, ctx) {
           trails.push({ x: b.position.x, y: b.position.y, age: 0, max: trailMaxFrames });
         }
       }
+      // Hard cap so the array can't grow unbounded if decay falls behind.
+      if (trails.length > 144) trails.splice(0, trails.length - 144);
     }
 
     // balls — bright sodium yellow with radial highlight
@@ -459,7 +461,9 @@ export function mount(slot, ctx) {
 
   Matter.Events.on(engine, "collisionStart", (ev) => {
     const now = performance.now();
-    const audioBudget = balls.length > 30 ? 60 : balls.length > 8 ? 30 : 12;
+    // Throttle ranges chosen so audio voices never stack: 12ms (was) was
+    // 83 triggers/sec — too many for end-of-round Tone.js voices.
+    const audioBudget = balls.length > 30 ? 80 : balls.length > 8 ? 40 : 25;
     for (const pair of ev.pairs) {
       const a = pair.bodyA, b = pair.bodyB;
       const peg  = a.label === "peg" ? a : b.label === "peg" ? b : null;
@@ -495,6 +499,10 @@ export function mount(slot, ctx) {
       friction: 0.002,
       frictionAir: 0.005,
       density: 0.025,
+      // Negative group = no collision with other negative-group bodies.
+      // Balls pass through each other — Plinko has no inter-ball mechanic
+      // and clustering in slots was tanking framerate at end-of-round.
+      collisionFilter: { group: -1 },
       label: "ball:" + (++liveBallId),
     });
     ball.path = Number(path);
