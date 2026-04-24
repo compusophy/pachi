@@ -207,26 +207,36 @@ balEl.addEventListener("click", () => {
   if (balEl.textContent === "tap to retry") onboard();
 });
 
-// Per-action contract version pre-flight. Cached in memory once decided —
-// matched: pass forever this session; mismatched: stale modal stays up until
-// refresh. Failure to read (RPC hiccup) fails OPEN so we never block a
-// legitimate play because of a transient RPC issue.
-let versionDecision = null;  // null | true | false
+// Per-action contract version pre-flight.
+//   - mismatch is STICKY (modal stays up; never overwritten)
+//   - match is cached for VERSION_RECHECK_MS so rapid plays don't hammer RPC
+//   - RPC failures fail OPEN if we previously matched (so a transient hiccup
+//     doesn't block legitimate play), fail OPEN on first call too
+//
+// Without the cache window, a tab held open across an upgrade would never
+// notice the new appVersion — the previous bug was caching match forever.
+const VERSION_RECHECK_MS = 60_000;
+let versionDecision = null;        // null | true | false
+let lastVersionCheck = 0;
 async function checkVersion() {
-  if (versionDecision !== null) return versionDecision;
+  if (versionDecision === false) return false;                      // sticky mismatch
+  if (versionDecision === true && Date.now() - lastVersionCheck < VERSION_RECHECK_MS) {
+    return true;                                                    // recent match — skip RPC
+  }
   try {
     const onchain = await client.readContract({
       address: PACHI_DIAMOND, abi: APPVERSION_ABI, functionName: "appVersion",
     });
     const onchainN = Number(onchain);
     versionDecision = onchainN === APP_VERSION;
+    lastVersionCheck = Date.now();
     if (!versionDecision) {
       if (staleLatest) staleLatest.textContent = String(onchainN);
       if (staleEl) staleEl.classList.add("show");
     }
   } catch (err) {
     console.warn("version check failed (failing open):", err);
-    versionDecision = true;
+    if (versionDecision === null) versionDecision = true;
   }
   return versionDecision;
 }
