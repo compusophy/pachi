@@ -1,0 +1,68 @@
+/* shell — chrome only. cards bring their own visual language. */
+
+:root {
+  --ink: #f0eee6;
+  --dim: #6b6a64;
+  --line: rgba(255, 255, 255, 0.06);
+  --bg: #050505;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  margin: 0;
+  height: 100dvh;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  overflow: hidden;
+  overscroll-behavior: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+body { display: flex; flex-direction: column; }
+
+.chrome {
+  position: fixed;
+  left: 0; right: 0;
+  z-index: 50;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 14px 18px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  mix-blend-mode: difference;
+  color: #fff;
+}
+.chrome.top { top: 0; padding-top: max(14px, env(safe-area-inset-top)); }
+
+.bal { font-weight: 700; }
+
+.stage {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
+.toast {
+  position: fixed;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%) translateY(20px);
+  background: #111;
+  border: 1px solid var(--line);
+  padding: 12px 18px;
+  border-radius: 4px;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  z-index: 100;
+  max-width: 80vw;
+  text-align: center;
+}
+.toast.show { opacity: 1; transform: translate(-50%, -50%) translateY(0); }

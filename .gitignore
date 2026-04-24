@@ -1,0 +1,19 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Foundry build artifacts
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+
+# Node
+node_modules/
+
+# Vercel local
+.vercel/
+
+# OS
+.DS_Store
+Thumbs.db
