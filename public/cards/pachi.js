@@ -512,6 +512,24 @@ export function mount(slot, ctx) {
     .then(s => { stakePerBallRaw = s; updateStakeLabel(); })
     .catch(() => updateStakeLabel());
 
+  // Belt-and-braces wrapper for nonce races. The shell wires up viem's
+  // nonceManager which usually handles this — but on first write after a
+  // page reload there can still be a stale-state race. If we see "nonce too
+  // low," wait a beat and retry; the second attempt picks up the corrected
+  // nonce automatically.
+  async function writeWithRetry(args, retries = 2) {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        return await ctx.client.writeContract(args);
+      } catch (err) {
+        const msg = (err.shortMessage || err.message || "").toLowerCase();
+        const isNonceRace = msg.includes("nonce") && (msg.includes("too low") || msg.includes("invalid"));
+        if (!isNonceRace || attempt === retries) throw err;
+        await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
+      }
+    }
+  }
+
   // One-time approval — first play from a fresh wallet needs the contract to
   // be allowed to pull AlphaUSD via transferFrom. Check + send if missing.
   let approvedSent = false;
@@ -521,10 +539,8 @@ export function mount(slot, ctx) {
       address: TOKEN_ADDR, abi: ERC20_ABI, functionName: "allowance",
       args: [ctx.account.address, PACHI_ADDR],
     });
-    // Threshold: enough for 100-ball plays at $1 each = 100e6. If under this,
-    // set max so we never have to think about it again.
     if (allowance < 1_000_000_000n) {
-      const hash = await ctx.client.writeContract({
+      const hash = await writeWithRetry({
         address: TOKEN_ADDR, abi: ERC20_ABI, functionName: "approve",
         args: [PACHI_ADDR, MAX_UINT256],
       });
@@ -548,7 +564,7 @@ export function mount(slot, ctx) {
 
     try {
       await ensureApproval();
-      const hash = await ctx.client.writeContract({
+      const hash = await writeWithRetry({
         address: PACHI_ADDR, abi: PACHI_ABI, functionName: "play", args: [BigInt(n)],
       });
       const receipt = await ctx.client.waitForTransactionReceipt({ hash });

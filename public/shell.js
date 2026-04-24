@@ -3,6 +3,7 @@
 
 import { createClient, http, publicActions, walletActions, parseEventLogs } from "https://esm.sh/viem@2.48.4";
 import { privateKeyToAccount, generatePrivateKey } from "https://esm.sh/viem@2.48.4/accounts";
+import { nonceManager } from "https://esm.sh/viem@2.48.4/nonce";
 import { tempoModerato } from "https://esm.sh/viem@2.48.4/chains";
 import { tempoActions } from "https://esm.sh/viem@2.48.4/tempo";
 
@@ -14,7 +15,10 @@ if (!priv) {
   priv = generatePrivateKey();
   localStorage.setItem(KEY_STORAGE, priv);
 }
-const account = privateKeyToAccount(priv);
+// nonceManager: shared across page lifetime, fetches from chain on first use,
+// then increments locally for back-to-back writes. Without this, a fresh load
+// races stale state and the first tx gets "nonce too low".
+const account = privateKeyToAccount(priv, { nonceManager });
 
 const client = createClient({
   account,
