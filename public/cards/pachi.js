@@ -349,21 +349,39 @@ export function mount(slot, ctx) {
     Matter.Engine.update(engine, 1000 / 60);
 
     const now = performance.now();
+    const rowSpacing = (slotsY - topY - 6) / ROWS;
+
     for (let bi = balls.length - 1; bi >= 0; bi--) {
       const ball = balls[bi];
 
-      // Per-row deterministic bias
-      const rowSpacing = (slotsY - topY - 6) / ROWS;
+      // Per-row aimed velocity. Compute the X velocity needed to reach the next
+      // inter-peg gap exactly, given current vY and the gap to the next row.
+      // (Old code used a fixed-magnitude push, which over/undershoots depending
+      // on rowSpacing and current vY — that's what made the ball land in the
+      // wrong slot ~80% of the time.)
       const newRow = Math.floor((ball.position.y - topY) / rowSpacing);
       if (newRow > ball.currentRow && newRow < ROWS) {
         ball.currentRow = newRow;
         const bit = (ball.path >> newRow) & 1;
-        const dir = bit ? +1 : -1;
-        const speed = 0.8 + Math.random() * 0.35;
-        Matter.Body.setVelocity(ball, {
-          x: dir * speed,
-          y: Math.max(ball.velocity.y, 1.4),
-        });
+        const stride = (bit ? +1 : -1) * (slotWidth * 0.5);   // exact next-gap offset
+        const nextRowY = topY + (newRow + 1) * rowSpacing;
+        const dy = Math.max(rowSpacing * 0.5, nextRowY - ball.position.y);
+        const vY = Math.max(1.4, ball.velocity.y);
+        const timeToNext = dy / vY;                            // frames
+        const vx = stride / timeToNext;
+        Matter.Body.setVelocity(ball, { x: vx, y: vY });
+      }
+
+      // Hard snap on slot-zone entry — guarantees the ball physically lands in
+      // the contract's authoritative slot, not whichever neighbor the bounce
+      // dynamics drifted toward. After good aiming above this is a tiny snap;
+      // worst case it's a ~half-slot teleport that's masked by the slot
+      // dividers.
+      if (!ball.snapped && ball.position.y > slotsY - ballR * 0.5) {
+        ball.snapped = true;
+        const targetX = slotBounds[ball.expectedSlot].mid;
+        Matter.Body.setPosition(ball, { x: targetX, y: ball.position.y });
+        Matter.Body.setVelocity(ball, { x: 0, y: Math.max(ball.velocity.y, 2) });
       }
 
       // Stuck detector — if ball isn't progressing downward, kick it.

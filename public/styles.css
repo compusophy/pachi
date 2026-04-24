@@ -30,36 +30,80 @@ body { display: flex; flex-direction: column; }
   left: 0; right: 0;
   z-index: 50;
   display: flex;
-  justify-content: flex-end;
+  justify-content: space-between;
   align-items: center;
-  padding: 13px 21px;          /* Fibonacci */
-  font-size: 13px;             /* Fibonacci */
+  padding: 13px 21px;
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.034em;     /* 1/φ⁵ */
+  letter-spacing: 0.034em;
   pointer-events: none;
-  mix-blend-mode: difference;
   color: #fff;
 }
 .chrome.top { top: 0; padding-top: max(13px, env(safe-area-inset-top)); }
 
-.bal { font-weight: 700; }
+/* Bits inside chrome that need clicks must opt in to pointer-events. */
+.chrome > * { pointer-events: auto; }
 
-.stage {
-  position: fixed;
-  inset: 0;
-  overflow: hidden;
+.bal { font-weight: 700; mix-blend-mode: difference; }
+
+/* PACHI logo + dropdown (top-left) */
+.logo-wrap { position: relative; }
+.logo {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.236em;     /* 1/φ³ */
+  color: #fff;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  mix-blend-mode: difference;
 }
+.logo-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: -8px;
+  background: #0a0d18;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 5px;
+  min-width: 144px;
+  display: none;
+  box-shadow: 0 13px 34px -13px rgba(0,0,0,0.7);
+  mix-blend-mode: normal;
+}
+.logo-menu.show { display: block; }
+.logo-menu-item {
+  display: block;
+  width: 100%;
+  background: transparent;
+  color: var(--ink);
+  border: none;
+  padding: 8px 13px;
+  text-align: left;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  letter-spacing: 0.034em;
+  text-transform: lowercase;
+  cursor: pointer;
+  border-radius: 5px;
+}
+.logo-menu-item:hover { background: rgba(255,255,255,0.05); }
 
+.stage { position: fixed; inset: 0; overflow: hidden; }
+
+/* Toast — system messages only. */
 .toast {
   position: fixed;
   top: 50%; left: 50%;
   transform: translate(-50%, -50%) translateY(21px);
   background: #111;
   border: 1px solid var(--line);
-  padding: 13px 21px;          /* Fibonacci */
-  border-radius: 8px;          /* Fibonacci */
-  font-size: 13px;             /* Fibonacci */
-  letter-spacing: 0.055em;     /* ≈ 1/φ⁶ */
+  padding: 13px 21px;
+  border-radius: 8px;
+  font-size: 13px;
+  letter-spacing: 0.055em;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.21s ease, transform 0.21s ease;
@@ -68,3 +112,134 @@ body { display: flex; flex-direction: column; }
   text-align: center;
 }
 .toast.show { opacity: 1; transform: translate(-50%, -50%) translateY(0); }
+
+/* Modal */
+.modal {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.78);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 21px;
+  z-index: 200;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.modal.show { display: flex; }
+.modal-card {
+  background: #0a0d18;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  width: min(100%, 610px);            /* φ × 377 ≈ 610, both Fibonacci */
+  max-height: 89vh;                   /* Fibonacci */
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 21px 89px -34px rgba(0,0,0,0.8);
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 21px;
+  border-bottom: 1px solid var(--line);
+}
+.modal-title {
+  margin: 0;
+  font-size: 21px;
+  font-weight: 800;
+  letter-spacing: 0.146em;            /* 1/φ⁴ */
+  text-transform: uppercase;
+}
+.modal-close {
+  background: transparent;
+  border: none;
+  color: var(--ink);
+  font-size: 21px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 5px;
+  opacity: 0.7;
+}
+.modal-close:hover { opacity: 1; }
+.modal-body {
+  padding: 21px;
+  overflow-y: auto;
+  flex: 1;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Analytics-specific (rendered by analytics.js into .modal-body) */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 13px;
+  margin-bottom: 21px;
+}
+.stat {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--line);
+  padding: 13px;
+  border-radius: 8px;
+}
+.stat-label {
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  opacity: 0.55;
+  margin-bottom: 5px;
+}
+.stat-val {
+  font-family: 'Inter', sans-serif;
+  font-variation-settings: "wght" 800;
+  font-size: 21px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.players-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.players-table th {
+  text-align: left;
+  padding: 8px 5px;
+  border-bottom: 1px solid var(--line);
+  font-weight: 700;
+  text-transform: lowercase;
+  letter-spacing: 0.05em;
+  opacity: 0.6;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.players-table td {
+  padding: 8px 5px;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  white-space: nowrap;
+}
+.players-table .addr { font-family: 'JetBrains Mono', monospace; opacity: 0.85; }
+.players-table .pos { color: #a4ffae; }
+.players-table .neg { color: #ff7b6b; }
+
+.analytics-loading {
+  text-align: center;
+  padding: 55px 0;
+  opacity: 0.55;
+  font-size: 13px;
+  letter-spacing: 0.146em;
+  text-transform: uppercase;
+}
+.analytics-error {
+  text-align: center;
+  padding: 34px 0;
+  color: #ff7b6b;
+  font-size: 12px;
+}
+.analytics-empty {
+  text-align: center;
+  padding: 55px 0;
+  opacity: 0.55;
+  font-size: 13px;
+}

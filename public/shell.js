@@ -127,6 +127,49 @@ const ctx = {
   },
 };
 
+// === Logo dropdown + modal wiring ===
+const logoEl     = document.getElementById("logo");
+const menuEl     = document.getElementById("logoMenu");
+const modalEl    = document.getElementById("modal");
+const modalBody  = document.getElementById("modalBody");
+const modalTitle = document.getElementById("modalTitle");
+const modalClose = document.getElementById("modalClose");
+
+function setMenu(open) {
+  menuEl.classList.toggle("show", open);
+  logoEl.setAttribute("aria-expanded", open ? "true" : "false");
+}
+logoEl.addEventListener("click", (e) => {
+  e.stopPropagation();
+  setMenu(!menuEl.classList.contains("show"));
+});
+document.addEventListener("click", () => setMenu(false));
+
+function openModal(title) {
+  modalTitle.textContent = title;
+  modalBody.innerHTML = "";
+  modalEl.classList.add("show");
+  modalEl.setAttribute("aria-hidden", "false");
+}
+function closeModal() {
+  modalEl.classList.remove("show");
+  modalEl.setAttribute("aria-hidden", "true");
+}
+modalClose.addEventListener("click", closeModal);
+modalEl.addEventListener("click", (e) => { if (e.target === modalEl) closeModal(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
+
+menuEl.addEventListener("click", async (e) => {
+  const action = e.target.dataset?.action;
+  if (!action) return;
+  setMenu(false);
+  if (action === "analytics") {
+    openModal("analytics");
+    const mod = await import("./analytics.js");
+    mod.render(modalBody, ctx);
+  }
+});
+
 (async () => {
   const ok = await onboard();
   if (!ok) return;  // user can tap balance to retry

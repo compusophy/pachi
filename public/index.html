@@ -12,10 +12,26 @@
 <body>
 
 <header class="chrome top">
+  <div class="logo-wrap">
+    <button class="logo" id="logo" aria-haspopup="true" aria-expanded="false">PACHI</button>
+    <div class="logo-menu" id="logoMenu" role="menu">
+      <button class="logo-menu-item" data-action="analytics" role="menuitem">analytics</button>
+    </div>
+  </div>
   <div class="bal" id="bal">···</div>
 </header>
 
 <main id="stage" class="stage"></main>
+
+<div class="modal" id="modal" aria-hidden="true">
+  <div class="modal-card" role="dialog" aria-modal="true">
+    <div class="modal-head">
+      <h2 class="modal-title" id="modalTitle">analytics</h2>
+      <button class="modal-close" id="modalClose" aria-label="close">×</button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
 
 <script type="module" src="./shell.js"></script>
 </body>
