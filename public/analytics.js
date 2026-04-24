@@ -149,8 +149,11 @@ export async function render(targetEl, ctx) {
         `).join('')}
       </tbody>
     </table>
-    <div style="margin-top:21px;font-size:10px;letter-spacing:.18em;text-transform:uppercase;opacity:.4;text-align:right">
-      contract v${version.toString()} · diamond ${fmtAddr(PACHI_DIAMOND)}
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:21px;font-size:10px;letter-spacing:.18em;text-transform:uppercase;opacity:.55">
+      <button id="analyticsRefresh" style="background:transparent;border:1px solid var(--ink-line);color:var(--ink);font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.18em;padding:5px 13px;border-radius:5px;cursor:pointer;text-transform:uppercase">refresh</button>
+      <span>contract v${version.toString()} · ${fmtAddr(PACHI_DIAMOND)}</span>
     </div>
   `;
+
+  targetEl.querySelector("#analyticsRefresh")?.addEventListener("click", () => render(targetEl, ctx));
 }

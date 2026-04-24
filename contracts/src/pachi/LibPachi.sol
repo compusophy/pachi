@@ -43,6 +43,12 @@ library LibPachi {
         // ── player enumeration (so analytics can list all wallets) ────
         address[] playersList;
         mapping(address => bool) seenPlayer;
+
+        // ── Phase 2: registration + daily allowance (added APPEND-ONLY) ─
+        mapping(address => bool) registered;
+        mapping(address => uint256) registeredAt;
+        mapping(address => address) inviter;             // address(0) for self-registered
+        mapping(address => uint256) lastAllowanceClaim;  // unix sec
     }
 
     function s() internal pure returns (Storage storage st) {

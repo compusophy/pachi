@@ -7,13 +7,20 @@ import { nonceManager } from "https://esm.sh/viem@2.48.4/nonce";
 import { tempoModerato } from "https://esm.sh/viem@2.48.4/chains";
 import { tempoActions } from "https://esm.sh/viem@2.48.4/tempo";
 
-export const TOKEN = "0x20c0000000000000000000000000000000000001"; // AlphaUSD, 6 dec
-// MUST match the diamond's appVersion. Bump after any breaking facet upgrade.
-// See memory: project_pachi_versioning. Order: contract first, client second.
-export const APP_VERSION = 1;
+// AlphaUSD pays gas (Tempo's fee-token system), small balance from faucet.
+export const ALPHA_USD = "0x20c0000000000000000000000000000000000001";
+// PachiUSD is the GAME currency, minted to registered users via OnboardingFacet.
+export const PACHI_USD = "0x576da0a989d574a3f9568007daceea919db6c53b";
 // Pachi diamond — stable address across all future facet upgrades.
-const PACHI_DIAMOND = "0x71e767bf661d6294c88953d640f0fc792a4c5086";
+export const PACHI_DIAMOND = "0x71e767bf661d6294c88953d640f0fc792a4c5086";
+// MUST match diamond's appVersion. Bump after any breaking facet upgrade.
+// See memory: project_pachi_versioning. Order: contract first, client second.
+export const APP_VERSION = 2;
 const KEY_STORAGE = "pachi:burnerKey:v1";
+
+// `TOKEN` left exported for back-compat with cards/pachi.js — points at the
+// game stake token (now PachiUSD), which is what the card needs to approve.
+export const TOKEN = PACHI_USD;
 
 let priv = localStorage.getItem(KEY_STORAGE);
 if (!priv) {
@@ -44,6 +51,17 @@ const APPVERSION_ABI = [
     inputs: [], outputs: [{ type: "uint256" }] },
 ];
 
+const ONBOARDING_ABI = [
+  { type: "function", name: "register", stateMutability: "nonpayable",
+    inputs: [{ name: "inviter", type: "address" }], outputs: [] },
+  { type: "function", name: "claimDailyAllowance", stateMutability: "nonpayable",
+    inputs: [], outputs: [] },
+  { type: "function", name: "isRegistered", stateMutability: "view",
+    inputs: [{ type: "address" }], outputs: [{ type: "bool" }] },
+  { type: "function", name: "nextAllowanceAt", stateMutability: "view",
+    inputs: [{ type: "address" }], outputs: [{ type: "uint256" }] },
+];
+
 const stage      = document.getElementById("stage");
 const balEl      = document.getElementById("bal");
 const versionEl  = document.getElementById("version");
@@ -59,10 +77,35 @@ const fmtUSD = (raw) =>
   `$${(Number(raw) / 1e6).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
+// Game balance = PachiUSD (what you play with). AlphaUSD is only for gas
+// and is checked separately during onboarding.
 async function getBalance() {
   return client.readContract({
-    address: TOKEN, abi: ERC20_ABI, functionName: "balanceOf", args: [account.address],
+    address: PACHI_USD, abi: ERC20_ABI, functionName: "balanceOf", args: [account.address],
   });
+}
+
+async function getAlphaBalance() {
+  return client.readContract({
+    address: ALPHA_USD, abi: ERC20_ABI, functionName: "balanceOf", args: [account.address],
+  });
+}
+
+async function isRegistered() {
+  return client.readContract({
+    address: PACHI_DIAMOND, abi: ONBOARDING_ABI, functionName: "isRegistered",
+    args: [account.address],
+  });
+}
+
+// Optional inviter from query string: ?inviter=0xABCD...
+function parseInviterFromURL() {
+  try {
+    const u = new URLSearchParams(location.search);
+    const inv = u.get("inviter");
+    if (inv && /^0x[0-9a-fA-F]{40}$/.test(inv)) return inv;
+  } catch {}
+  return "0x0000000000000000000000000000000000000000";
 }
 
 function setBal(text, opts = {}) {
@@ -82,46 +125,66 @@ function toast(msg, ms = 2400) {
   }, ms);
 }
 
-// Single-flight onboarding. If already funded (returning visitor), no API
-// call. Otherwise: POST /api/faucet (which now waits for the funding tx to
-// confirm before responding), then poll the chain until the balance shows up.
+// Three-step onboarding (single-flight, idempotent):
+//   1. Faucet AlphaUSD via /api/faucet (so the wallet can pay gas).
+//   2. Register on the diamond via OnboardingFacet.register(inviter).
+//      Mints $1000 PachiUSD starter to the wallet.
+//   3. Display PachiUSD balance.
+// All steps short-circuit if already done (returning visitor, refresh, etc.)
 let onboarding = null;
 async function onboard() {
   if (onboarding) return onboarding;
   onboarding = (async () => {
     try {
-      // Already funded? (cached wallet, returning visitor, or refresh after fund)
-      let bal = await getBalance();
-      if (bal > 0n) {
-        setBal(fmtUSD(bal));
-        return true;
-      }
-
-      setBal("loading…");
-
-      const r = await fetch("/api/faucet", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address: account.address }),
-      });
-
-      // 200 (synchronously confirmed), 202 (pending — keep polling), or error.
-      if (!r.ok && r.status !== 202) {
-        const txt = await r.text().catch(() => "");
-        throw new Error(`faucet ${r.status}${txt ? ": " + txt.slice(0, 100) : ""}`);
-      }
-
-      // Server already waited for the receipt on 200, but the RPC view can lag
-      // a beat. On 202, the tx is pending. Poll until the balance is visible.
-      for (let i = 0; i < 24; i++) {
-        bal = await getBalance();
-        if (bal > 0n) {
-          setBal(fmtUSD(bal));
-          return true;
+      // Step 1 — AlphaUSD for gas
+      let alpha = await getAlphaBalance();
+      if (alpha === 0n) {
+        setBal("loading…");
+        const r = await fetch("/api/faucet", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ address: account.address }),
+        });
+        if (!r.ok && r.status !== 202) {
+          const txt = await r.text().catch(() => "");
+          throw new Error(`faucet ${r.status}${txt ? ": " + txt.slice(0, 100) : ""}`);
         }
-        await sleep(500);
+        // Poll until the funding tx confirms RPC-side
+        for (let i = 0; i < 24; i++) {
+          alpha = await getAlphaBalance();
+          if (alpha > 0n) break;
+          await sleep(500);
+        }
+        if (alpha === 0n) throw new Error("gas funding didn't land");
       }
-      throw new Error("funding didn't land in time");
+
+      // Step 2 — Register on the diamond if not already
+      const registered = await isRegistered().catch(() => false);
+      if (!registered) {
+        setBal("registering…");
+        const inviter = parseInviterFromURL();
+        try {
+          const hash = await client.writeContract({
+            address: PACHI_DIAMOND, abi: ONBOARDING_ABI,
+            functionName: "register", args: [inviter],
+          });
+          await client.waitForTransactionReceipt({ hash });
+        } catch (err) {
+          // If the on-chain call says "already registered" we're fine — proceed.
+          const msg = (err.shortMessage || err.message || "").toLowerCase();
+          if (!msg.includes("already")) throw err;
+        }
+      }
+
+      // Step 3 — Show PachiUSD balance
+      let bal = await getBalance();
+      // Tiny grace window in case the register tx just landed
+      for (let i = 0; bal === 0n && i < 6; i++) {
+        await sleep(400);
+        bal = await getBalance();
+      }
+      setBal(fmtUSD(bal));
+      return true;
     } catch (err) {
       console.error("onboard failed:", err);
       setBal("tap to retry", { clickable: true });
@@ -203,6 +266,28 @@ modalClose.addEventListener("click", closeModal);
 modalEl.addEventListener("click", (e) => { if (e.target === modalEl) closeModal(); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
 
+async function claimDaily() {
+  if (!(await checkVersion())) return;
+  try {
+    toast("claiming daily…");
+    const hash = await client.writeContract({
+      address: PACHI_DIAMOND, abi: ONBOARDING_ABI, functionName: "claimDailyAllowance",
+    });
+    await client.waitForTransactionReceipt({ hash });
+    setBal(fmtUSD(await getBalance()));
+    toast("+$1,000 PACHI claimed");
+  } catch (err) {
+    const msg = err.shortMessage || err.message || "claim failed";
+    if (msg.toLowerCase().includes("cooldown") || msg.toLowerCase().includes("allowancecooldown")) {
+      toast("daily already claimed — try again tomorrow");
+    } else if (msg.toLowerCase().includes("notregistered")) {
+      toast("register first (will happen automatically next reload)");
+    } else {
+      toast(msg);
+    }
+  }
+}
+
 menuEl.addEventListener("click", async (e) => {
   const action = e.target.dataset?.action;
   if (!action) return;
@@ -211,6 +296,8 @@ menuEl.addEventListener("click", async (e) => {
     openModal("analytics");
     const mod = await import("./analytics.js");
     mod.render(modalBody, ctx);
+  } else if (action === "claim") {
+    claimDaily();
   }
 });
 
