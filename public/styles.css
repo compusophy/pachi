@@ -63,12 +63,22 @@ body { display: flex; flex-direction: column; }
   pointer-events: none;
   color: #fff;
 }
-.chrome.top { top: 0; padding-top: max(13px, env(safe-area-inset-top)); }
+.chrome.top    { top: 0;    padding-top: max(13px, env(safe-area-inset-top)); }
+.chrome.bottom { bottom: 0; padding-bottom: max(13px, env(safe-area-inset-bottom)); justify-content: flex-start; }
 
 /* Bits inside chrome that need clicks must opt in to pointer-events. */
 .chrome > * { pointer-events: auto; }
 
 .bal { font-weight: 700; mix-blend-mode: difference; }
+.version {
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.13em;
+  color: var(--dim);
+  opacity: 0.55;
+  font-variant-numeric: tabular-nums;
+  text-transform: lowercase;
+}
 
 /* PACHI logo + dropdown (top-left)
    Gold tone (HSL 45°), glow layered at Fibonacci radii (3 / 8 / 21 / 55 px)
@@ -283,3 +293,49 @@ body { display: flex; flex-direction: column; }
   opacity: 0.55;
   font-size: 13px;
 }
+
+/* Stale-version modal — slightly more urgent than analytics modal. */
+.modal.stale .modal-card {
+  border-color: rgba(255, 214, 10, 0.34);
+  box-shadow:
+    0 21px 89px -34px rgba(0,0,0,0.8),
+    0 0 55px rgba(255, 214, 10, 0.13);
+}
+.modal.stale .modal-title { color: var(--gold-pure); }
+.stale-copy {
+  text-align: center;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+  margin: 8px 0 21px;
+}
+.stale-versions {
+  text-align: center;
+  font-size: 12px;
+  letter-spacing: 0.146em;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+  margin: 0 0 34px;
+  text-transform: uppercase;
+}
+.stale-btn {
+  display: block;
+  width: 100%;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.382em;
+  text-transform: uppercase;
+  color: var(--ink-deep);
+  background: var(--gold-pure);
+  border: none;
+  padding: 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.15s;
+  box-shadow:
+    0 13px 34px -13px rgba(255,235,71,0.45),
+    inset 0 1px 0 rgba(255,255,255,0.5);
+}
+.stale-btn:hover  { background: var(--gold-bright); }
+.stale-btn:active { transform: translateY(1px); }

@@ -1,26 +1,31 @@
-// Analytics — pulls Played events from the Pachi contract, aggregates real
-// metrics (RTP, house edge, per-wallet table) and renders into a target
-// element. No data is faked; everything is computed from on-chain logs.
+// Analytics — pulls aggregates from the Pachi Diamond's StatsFacet via O(1)
+// view calls. No event scanning, no block-range pagination, no RPC limits.
+// Adding new metrics = add to LibPachi.Storage + StatsFacet view + render here.
 
-const PACHI_ADDR  = "0xbc42C1a7815098BA4321B7bc1Bce0137Fd055E56";
-// Block the current Pachi was deployed at — Tempo Moderato RPC rejects
-// `fromBlock: "earliest"` on getLogs, and we want to skip irrelevant history
-// either way. Update this whenever the contract is redeployed.
-const DEPLOY_BLOCK = 14440175n;
-// Conservative window for chunked getLogs — Tempo's RPC tolerates ranges up
-// to ~10k blocks; keep some headroom.
-const CHUNK_SIZE   = 5000n;
-const PLAYED_EVENT_ABI = [
-  { type: "event", name: "Played", inputs: [
-    { indexed: true,  name: "player",       type: "address" },
-    { indexed: false, name: "stakePerBall", type: "uint256" },
-    { indexed: false, name: "nBalls",       type: "uint256" },
-    { indexed: false, name: "paths",        type: "uint256[]" },
-    { indexed: false, name: "ballMults",    type: "uint256[]" },
-    { indexed: false, name: "totalBps",     type: "uint256" },
-    { indexed: false, name: "payout",       type: "uint256" },
-    { indexed: false, name: "nonce",        type: "uint256" },
-  ]},
+const PACHI_DIAMOND = "0x71e767bf661d6294c88953d640f0fc792a4c5086";
+
+const STATS_ABI = [
+  { type: "function", name: "houseStats", stateMutability: "view", inputs: [],
+    outputs: [
+      { name: "totalPlays",    type: "uint256" },
+      { name: "totalBalls",    type: "uint256" },
+      { name: "totalWagered",  type: "uint256" },
+      { name: "totalPaid",     type: "uint256" },
+      { name: "uniqueWallets", type: "uint256" },
+    ] },
+  { type: "function", name: "playersCount", stateMutability: "view", inputs: [],
+    outputs: [{ type: "uint256" }] },
+  { type: "function", name: "playersBatch", stateMutability: "view",
+    inputs: [{ type: "uint256" }, { type: "uint256" }],
+    outputs: [
+      { name: "addrs",   type: "address[]" },
+      { name: "plays",   type: "uint256[]" },
+      { name: "balls",   type: "uint256[]" },
+      { name: "wagered", type: "uint256[]" },
+      { name: "paid",    type: "uint256[]" },
+    ] },
+  { type: "function", name: "appVersion", stateMutability: "view", inputs: [],
+    outputs: [{ type: "uint256" }] },
 ];
 
 const fmtUSD = (raw) => {
@@ -28,85 +33,70 @@ const fmtUSD = (raw) => {
   if (Math.abs(n) >= 1000) return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
   return `$${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 };
-const fmtPct = (n) => `${(n * 100).toFixed(2)}%`;
+const fmtPct  = (n) => `${(n * 100).toFixed(2)}%`;
 const fmtAddr = (a) => `${a.slice(0, 6)}…${a.slice(-4)}`;
-const fmtSignedUSD = (raw) => {
-  if (raw >= 0n) return `+${fmtUSD(raw)}`;
-  return `−${fmtUSD(-raw)}`;
-};
+const fmtSignedUSD = (raw) => raw >= 0n ? `+${fmtUSD(raw)}` : `−${fmtUSD(-raw)}`;
+
+const TARGET_EDGE = 0.01618; // 1.618%
 
 export async function render(targetEl, ctx) {
   targetEl.innerHTML = '<div class="analytics-loading">querying chain…</div>';
 
-  let events;
+  let stats, count, batch, version;
   try {
-    events = await ctx.client.getContractEvents({
-      address: PACHI_ADDR,
-      abi: PLAYED_EVENT_ABI,
-      eventName: "Played",
-      fromBlock: "earliest",
-      toBlock: "latest",
-    });
+    [stats, count, version] = await Promise.all([
+      ctx.client.readContract({ address: PACHI_DIAMOND, abi: STATS_ABI, functionName: "houseStats" }),
+      ctx.client.readContract({ address: PACHI_DIAMOND, abi: STATS_ABI, functionName: "playersCount" }),
+      ctx.client.readContract({ address: PACHI_DIAMOND, abi: STATS_ABI, functionName: "appVersion" }),
+    ]);
   } catch (err) {
     console.error(err);
     targetEl.innerHTML = `<div class="analytics-error">${err.shortMessage || err.message || "query failed"}</div>`;
     return;
   }
 
-  if (events.length === 0) {
+  const [totalPlays, totalBalls, totalWagered, totalPaid, uniqueWallets] = stats;
+
+  if (totalPlays === 0n) {
     targetEl.innerHTML = '<div class="analytics-empty">no plays yet — be the first</div>';
     return;
   }
 
-  // Aggregate
-  const players = new Map();
-  let totalBalls = 0n;
-  let totalWageredRaw = 0n;
-  let totalPaidRaw = 0n;
-
-  for (const ev of events) {
-    const { player, nBalls, stakePerBall, payout } = ev.args;
-    const wagered = stakePerBall * nBalls;
-    totalBalls += nBalls;
-    totalWageredRaw += wagered;
-    totalPaidRaw += payout;
-
-    if (!players.has(player)) {
-      players.set(player, { plays: 0, balls: 0n, wagered: 0n, paid: 0n });
+  // Pull all wallets in chunks of 100 — RPC-cheap.
+  const players = [];
+  const PAGE = 100n;
+  for (let from = 0n; from < count; from += PAGE) {
+    const to = from + PAGE > count ? count : from + PAGE;
+    const [addrs, plays, balls, wagered, paid] = await ctx.client.readContract({
+      address: PACHI_DIAMOND, abi: STATS_ABI, functionName: "playersBatch", args: [from, to],
+    });
+    for (let i = 0; i < addrs.length; i++) {
+      players.push({
+        addr: addrs[i],
+        plays: Number(plays[i]),
+        balls: balls[i],
+        wagered: wagered[i],
+        paid: paid[i],
+        net: paid[i] - wagered[i],
+        rtp: Number(wagered[i]) > 0 ? Number(paid[i]) / Number(wagered[i]) : 0,
+      });
     }
-    const p = players.get(player);
-    p.plays++;
-    p.balls += nBalls;
-    p.wagered += wagered;
-    p.paid += payout;
   }
+  players.sort((a, b) => Number(b.wagered) - Number(a.wagered));
 
-  const realRtp = Number(totalPaidRaw) / Number(totalWageredRaw);
+  const realRtp = Number(totalPaid) / Number(totalWagered);
   const realEdge = 1 - realRtp;
-
-  const playerRows = [...players.entries()]
-    .map(([addr, p]) => ({
-      addr, ...p,
-      net: p.paid - p.wagered,
-      rtp: Number(p.wagered) > 0 ? Number(p.paid) / Number(p.wagered) : 0,
-    }))
-    .sort((a, b) => Number(b.wagered) - Number(a.wagered));
-
-  // Theoretical edge for comparison: 1.618% (calibrated multiplier table).
-  // We expose the delta so the dev can spot bias from physics drift / unstuck
-  // kicks / etc. Players never see this surface — it's gated behind the logo.
-  const theoreticalEdge = 0.01618;
-  const edgeDelta = realEdge - theoreticalEdge;
+  const edgeDelta = realEdge - TARGET_EDGE;
 
   targetEl.innerHTML = `
     <div class="stats-grid">
       <div class="stat">
         <div class="stat-label">unique wallets</div>
-        <div class="stat-val">${players.size}</div>
+        <div class="stat-val">${uniqueWallets.toString()}</div>
       </div>
       <div class="stat">
         <div class="stat-label">total plays</div>
-        <div class="stat-val">${events.length.toLocaleString()}</div>
+        <div class="stat-val">${totalPlays.toLocaleString()}</div>
       </div>
       <div class="stat">
         <div class="stat-label">total balls</div>
@@ -114,22 +104,22 @@ export async function render(targetEl, ctx) {
       </div>
       <div class="stat">
         <div class="stat-label">total wagered</div>
-        <div class="stat-val">${fmtUSD(totalWageredRaw)}</div>
+        <div class="stat-val">${fmtUSD(totalWagered)}</div>
       </div>
       <div class="stat">
         <div class="stat-label">total paid</div>
-        <div class="stat-val">${fmtUSD(totalPaidRaw)}</div>
+        <div class="stat-val">${fmtUSD(totalPaid)}</div>
       </div>
       <div class="stat">
         <div class="stat-label">house take</div>
-        <div class="stat-val">${fmtSignedUSD(totalWageredRaw - totalPaidRaw)}</div>
+        <div class="stat-val">${fmtSignedUSD(totalWagered - totalPaid)}</div>
       </div>
       <div class="stat">
         <div class="stat-label">real RTP</div>
         <div class="stat-val">${fmtPct(realRtp)}</div>
       </div>
       <div class="stat">
-        <div class="stat-label">real edge (vs 1.618% target)</div>
+        <div class="stat-label">real edge (vs ${fmtPct(TARGET_EDGE)} target)</div>
         <div class="stat-val">${fmtPct(realEdge)} <span style="font-size:11px;opacity:0.6;font-weight:400">(${edgeDelta >= 0 ? '+' : ''}${(edgeDelta * 100).toFixed(2)}pp)</span></div>
       </div>
     </div>
@@ -146,7 +136,7 @@ export async function render(targetEl, ctx) {
         </tr>
       </thead>
       <tbody>
-        ${playerRows.map(p => `
+        ${players.map(p => `
           <tr>
             <td class="addr">${fmtAddr(p.addr)}</td>
             <td>${p.plays}</td>
@@ -159,5 +149,8 @@ export async function render(targetEl, ctx) {
         `).join('')}
       </tbody>
     </table>
+    <div style="margin-top:21px;font-size:10px;letter-spacing:.18em;text-transform:uppercase;opacity:.4;text-align:right">
+      contract v${version.toString()} · diamond ${fmtAddr(PACHI_DIAMOND)}
+    </div>
   `;
 }

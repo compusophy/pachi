@@ -23,6 +23,10 @@
 
 <main id="stage" class="stage"></main>
 
+<footer class="chrome bottom">
+  <div class="version" id="version">v—</div>
+</footer>
+
 <div class="modal" id="modal" aria-hidden="true">
   <div class="modal-card" role="dialog" aria-modal="true">
     <div class="modal-head">
@@ -30,6 +34,22 @@
       <button class="modal-close" id="modalClose" aria-label="close">×</button>
     </div>
     <div class="modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<div class="modal stale" id="staleModal" aria-hidden="true">
+  <div class="modal-card" role="dialog" aria-modal="true">
+    <div class="modal-head">
+      <h2 class="modal-title">PACHI updated</h2>
+    </div>
+    <div class="modal-body">
+      <p class="stale-copy">A new version of the contract is live. Refresh to load the latest client.</p>
+      <p class="stale-versions">
+        client&nbsp;<span id="staleClient">—</span>&nbsp;&nbsp;·&nbsp;&nbsp;
+        latest&nbsp;v<span id="staleLatest">—</span>
+      </p>
+      <button class="stale-btn" id="staleRefresh">REFRESH</button>
+    </div>
   </div>
 </div>
 

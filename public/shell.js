@@ -8,6 +8,11 @@ import { tempoModerato } from "https://esm.sh/viem@2.48.4/chains";
 import { tempoActions } from "https://esm.sh/viem@2.48.4/tempo";
 
 export const TOKEN = "0x20c0000000000000000000000000000000000001"; // AlphaUSD, 6 dec
+// MUST match the diamond's appVersion. Bump after any breaking facet upgrade.
+// See memory: project_pachi_versioning. Order: contract first, client second.
+export const APP_VERSION = 1;
+// Pachi diamond — stable address across all future facet upgrades.
+const PACHI_DIAMOND = "0x71e767bf661d6294c88953d640f0fc792a4c5086";
 const KEY_STORAGE = "pachi:burnerKey:v1";
 
 let priv = localStorage.getItem(KEY_STORAGE);
@@ -34,8 +39,21 @@ const ERC20_ABI = [
     inputs: [{ name: "owner", type: "address" }], outputs: [{ type: "uint256" }] },
 ];
 
-const stage = document.getElementById("stage");
-const balEl = document.getElementById("bal");
+const APPVERSION_ABI = [
+  { type: "function", name: "appVersion", stateMutability: "view",
+    inputs: [], outputs: [{ type: "uint256" }] },
+];
+
+const stage      = document.getElementById("stage");
+const balEl      = document.getElementById("bal");
+const versionEl  = document.getElementById("version");
+const staleEl    = document.getElementById("staleModal");
+const staleClient = document.getElementById("staleClient");
+const staleLatest = document.getElementById("staleLatest");
+const staleRefresh = document.getElementById("staleRefresh");
+
+if (versionEl) versionEl.textContent = `v${APP_VERSION}`;
+if (staleClient) staleClient.textContent = String(APP_VERSION);
 
 const fmtUSD = (raw) =>
   `$${(Number(raw) / 1e6).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -120,8 +138,34 @@ balEl.addEventListener("click", () => {
   if (balEl.textContent === "tap to retry") onboard();
 });
 
+// Per-action contract version pre-flight. Cached in memory once decided —
+// matched: pass forever this session; mismatched: stale modal stays up until
+// refresh. Failure to read (RPC hiccup) fails OPEN so we never block a
+// legitimate play because of a transient RPC issue.
+let versionDecision = null;  // null | true | false
+async function checkVersion() {
+  if (versionDecision !== null) return versionDecision;
+  try {
+    const onchain = await client.readContract({
+      address: PACHI_DIAMOND, abi: APPVERSION_ABI, functionName: "appVersion",
+    });
+    const onchainN = Number(onchain);
+    versionDecision = onchainN === APP_VERSION;
+    if (!versionDecision) {
+      if (staleLatest) staleLatest.textContent = String(onchainN);
+      if (staleEl) staleEl.classList.add("show");
+    }
+  } catch (err) {
+    console.warn("version check failed (failing open):", err);
+    versionDecision = true;
+  }
+  return versionDecision;
+}
+
+if (staleRefresh) staleRefresh.addEventListener("click", () => location.reload());
+
 const ctx = {
-  client, account, parseEventLogs, toast,
+  client, account, parseEventLogs, toast, checkVersion,
   refreshBalance: async () => {
     try { setBal(fmtUSD(await getBalance())); } catch {}
   },

@@ -5,7 +5,9 @@
 import Matter from "https://esm.sh/matter-js@0.20.0";
 import * as Tone from "https://esm.sh/tone@15.0.4";
 
-const PACHI_ADDR = "0xbc42C1a7815098BA4321B7bc1Bce0137Fd055E56";
+// Diamond address — stable across all future facet upgrades. Don't change
+// this when we modify game logic; bump appVersion (see project_pachi_versioning).
+const PACHI_ADDR = "0x71e767bf661d6294c88953d640f0fc792a4c5086";
 const TOKEN_ADDR = "0x20c0000000000000000000000000000000000001"; // AlphaUSD
 const MAX_UINT256 = (1n << 256n) - 1n;
 
@@ -650,6 +652,10 @@ export function mount(slot, ctx) {
 
   async function play() {
     if (btnEl.disabled) return;
+    // Pre-flight version check — abort if the deployed diamond is ahead of
+    // this client. ctx.checkVersion shows a "refresh to update" modal on
+    // mismatch, then we bail before sending the tx.
+    if (ctx.checkVersion && !(await ctx.checkVersion())) return;
     await ensureAudio().catch(() => {});
 
     // reset round state immediately
