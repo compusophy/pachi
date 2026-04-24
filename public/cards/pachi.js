@@ -43,12 +43,34 @@ const MULTS = [850000, 110000, 30000, 16000, 5000, 12000, 1086,
 
 const PHI = 1.6180339887;
 
-// Slot color, edges-hot, center-cool
-const SLOT_COLORS = [
-  "#ffd60a", "#ff8c1a", "#ff4f27", "#ff2bd6", "#7c5cff",
-  "#3aa6ff", "#2a3550",
-  "#3aa6ff", "#7c5cff", "#ff2bd6", "#ff4f27", "#ff8c1a", "#ffd60a",
+// Slot tone — tiered gold scale (no rainbow). Each tier is a φ-step in
+// payoff value; visual intensity follows. Mirrors the brand palette.
+const TIER_GOLD = [
+  "#1d1605",  // tier 0 — dim ember (only the central 0.1× sink)
+  "#3a2e0e",  // tier 1 — deep amber  (0.5×)
+  "#6b521b",  // tier 2 — settled bronze (1.2×)
+  "#9c772a",  // tier 3 — honey (1.6×)
+  "#d09e3a",  // tier 4 — bright honey (3×)
+  "#ffc940",  // tier 5 — bright gold (11×)
+  "#ffe066",  // tier 6 — blazing (jackpot 85×)
 ];
+function tierForBps(bps) {
+  if (bps >= 800_000) return 6;
+  if (bps >= 100_000) return 5;
+  if (bps >= 30_000)  return 4;
+  if (bps >= 16_000)  return 3;
+  if (bps >= 12_000)  return 2;
+  if (bps >= 5_000)   return 1;
+  return 0;
+}
+const SLOT_TIERS  = MULTS.map(tierForBps);
+const SLOT_COLORS = SLOT_TIERS.map((t) => TIER_GOLD[t]);
+
+// Per-tier base fill alpha (Fibonacci hex steps — each tier ~φ× brighter)
+const TIER_BG_ALPHA  = [0x05, 0x0d, 0x14, 0x21, 0x34, 0x55, 0x89];
+// Per-tier hot-tint amplification — high-tier slots respond more dramatically
+// when struck, low-tier slots are quietly absorbed.
+const TIER_HOT_BOOST = [0.8, 1.0, 1.2, 1.5, 1.9, 2.3, 3.0];
 
 const popcount12 = (x) => {
   let c = 0;
@@ -117,6 +139,7 @@ export function mount(slot, ctx) {
     e.stopPropagation();
     if (btnEl.disabled) return;
     setN(Number(p.dataset.n));
+    p.blur();
   }));
 
   // ── physics setup ───────────────────────────────────────────────────────
@@ -245,17 +268,22 @@ export function mount(slot, ctx) {
     cx.fillStyle = "#0a0d18";
     cx.fillRect(0, 0, W, H);
 
-    // slot fills, with hot-tint when recently struck
+    // slot fills — tiered gold by multiplier value, with hot-tint when struck.
+    // Top-tier slots breathe a slow shimmer always-on.
     const now = performance.now();
     for (let s = 0; s < SLOTS; s++) {
       const b = slotBounds[s];
+      const tier = SLOT_TIERS[s];
+      const c = TIER_GOLD[tier];
       const heat = b.hot > 0 ? Math.max(0, 1 - (now - b.hot) / 600) : 0;
-      const baseAlpha = 0x12;
-      const c = SLOT_COLORS[s];
-      cx.fillStyle = c + (heat > 0 ? toAlphaHex(0x12 + heat * 0xA0) : toAlphaHex(baseAlpha));
+      const boost = TIER_HOT_BOOST[tier];
+      // Always-on shimmer for tiers 5+ (bright gold and jackpot)
+      const breath = tier >= 5 ? (Math.sin(now * 0.0021 + s * 0.7) + 1) / 2 : 0;
+      const alpha = TIER_BG_ALPHA[tier] + heat * 0xA0 * boost + breath * 0x18;
+      cx.fillStyle = c + toAlphaHex(Math.min(0xff, alpha));
       cx.fillRect(b.x0 + 1, slotsY, b.x1 - b.x0 - 2, slotsH);
       if (heat > 0) {
-        cx.fillStyle = c + toAlphaHex(0x40 * heat);
+        cx.fillStyle = c + toAlphaHex(Math.min(0xff, 0x40 * heat * boost));
         cx.fillRect(b.x0 + 1, slotsY, b.x1 - b.x0 - 2, 3);
       }
     }
@@ -268,16 +296,21 @@ export function mount(slot, ctx) {
       cx.beginPath(); cx.moveTo(x + 0.5, slotsY); cx.lineTo(x + 0.5, slotsY + slotsH); cx.stroke();
     }
 
-    // slot multiplier labels — sized to fit the slot WIDTH (since slots are
-    // now portrait, text would overflow if sized to height). Centered vertically.
+    // slot multiplier labels — tier glow scales with payoff; tier-6 jackpot
+    // labels always shine, tier-0 sink stays cleanly dim.
     const labelSize = Math.min(slotsH * 0.36, slotWidth * 0.4);
     cx.font = `700 ${Math.floor(labelSize)}px 'IBM Plex Mono', ui-monospace, monospace`;
     cx.textAlign = "center"; cx.textBaseline = "middle";
     for (let s = 0; s < SLOTS; s++) {
       const b = slotBounds[s];
-      cx.fillStyle = SLOT_COLORS[s];
+      const tier = SLOT_TIERS[s];
+      cx.fillStyle = TIER_GOLD[tier];
+      // Glow blur scales 0 → 13 with tier; matches Fibonacci progression.
+      cx.shadowColor = TIER_GOLD[tier];
+      cx.shadowBlur  = tier * 2.2;
       cx.fillText(fmtMult(MULTS[s]), b.mid, slotsY + slotsH * 0.5);
     }
+    cx.shadowBlur = 0; cx.shadowColor = "transparent";
 
     // pegs — single gold flash. Lightness ramps with heat by 1/φ steps so the
     // bright phase matches the golden visual language without inventing new hues
@@ -539,19 +572,22 @@ export function mount(slot, ctx) {
       totalEl.style.textShadow = "none";
       return;
     }
-    const intensitySteps = Math.log(ratio) / Math.log(PHI);   // 0..∞
-    const t = Math.min(intensitySteps / 8, 1);                // cap at φ⁸
-    // Color: stays HSL 50° (gold), lightness slides from white-gold toward
-    // saturated bullion as t grows.
-    const lightness = 100 - t * 48;                            // 100 → 52
+    // Even small wins should be visibly gold (RuneScape-style "any-positive
+    // glints"). t maps log_φ(ratio) to a [0.22, 1] band so the lowest
+    // possible win still reads as gold, jackpot maxes the scale.
+    const intensitySteps = Math.log(ratio) / Math.log(PHI);   // log_φ(ratio)
+    const t = Math.max(0.22, Math.min(intensitySteps / 6, 1)); // φ⁶ ≈ 18× → max
+    // Color: HSL 50° (gold), lightness 88% (light-gold tint at the floor)
+    // → 50% (saturated bullion at jackpot).
+    const lightness = 88 - t * 38;
     totalEl.style.color = `hsl(50, 100%, ${lightness}%)`;
-    // Glow: 4 layers, sizes scale by Fibonacci, opacities by inverse golden powers.
+    // Glow: 4 layers, sizes Fibonacci-spaced, opacities inverse-golden.
     const s = (a, b) => a + (b - a) * t;
     totalEl.style.textShadow = [
-      `0 0 ${s(2, 13).toFixed(1)}px  rgba(255, 247, 194, ${s(0, 0.85).toFixed(2)})`,
-      `0 0 ${s(5, 34).toFixed(1)}px  rgba(255, 214, 10,  ${s(0, 0.62).toFixed(2)})`,
-      `0 0 ${s(13, 89).toFixed(1)}px rgba(255, 140, 0,   ${s(0, 0.38).toFixed(2)})`,
-      `0 0 ${s(21, 144).toFixed(1)}px rgba(255, 100, 0,   ${s(0, 0.24).toFixed(2)})`,
+      `0 0 ${s(5, 21).toFixed(1)}px  rgba(255, 247, 194, ${s(0.45, 0.95).toFixed(2)})`,
+      `0 0 ${s(13, 55).toFixed(1)}px rgba(255, 214, 10,  ${s(0.30, 0.78).toFixed(2)})`,
+      `0 0 ${s(21, 144).toFixed(1)}px rgba(255, 140, 0,  ${s(0.18, 0.55).toFixed(2)})`,
+      `0 0 ${s(34, 233).toFixed(1)}px rgba(255, 100, 0,  ${s(0.08, 0.34).toFixed(2)})`,
     ].join(", ");
   }
 
@@ -659,7 +695,11 @@ export function mount(slot, ctx) {
     }
   }
 
-  btnEl.addEventListener("click", (e) => { e.stopPropagation(); play(); });
+  btnEl.addEventListener("click", (e) => {
+    e.stopPropagation();
+    btnEl.blur();   // strip lingering focus/hover state on touch devices
+    play();
+  });
 
   // ── boot ────────────────────────────────────────────────────────────────
   requestAnimationFrame(() => {
@@ -797,9 +837,13 @@ const PACHI_CSS = `
     inset 0 1px 0 rgba(255,255,255,0.6),
     inset 0 -3px 0 rgba(0,0,0,0.18);
 }
-.pachi-btn:hover     { background: #fff7c2; }
+/* Hover only on devices that actually hover — prevents tap-stickiness on touch */
+@media (hover: hover) {
+  .pachi-btn:hover { background: #fff7c2; }
+}
 .pachi-btn:active    { transform: translateY(2px); box-shadow: 0 5px 13px -8px rgba(255,235,71,0.6); }
-.pachi-btn[disabled] { opacity: 0.45; cursor: wait; box-shadow: none; }
+.pachi-btn:focus     { outline: none; }
+.pachi-btn[disabled] { opacity: 0.45; cursor: wait; box-shadow: none; background: #ffeb47; }
 
 .pachi-stake {
   font-size: 13px; letter-spacing: 0.236em;  /* 1/φ³ */

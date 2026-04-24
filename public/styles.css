@@ -3,10 +3,34 @@
    ratio properties (letter-spacing, scales) follow inverse golden powers. */
 
 :root {
+  /* — Gold scale — 7 tiers from dim ember to blazing.
+       Lightness steps roughly φ-spaced (each tier ≈ 1.618× the prior). */
+  --gold-0: #1d1605;   /* dimmest — barely visible warm umbra */
+  --gold-1: #3a2e0e;   /* deep amber */
+  --gold-2: #6b521b;   /* dim ember */
+  --gold-3: #9c772a;   /* settled bronze */
+  --gold-4: #d09e3a;   /* honey */
+  --gold-5: #ffc940;   /* bright gold */
+  --gold-6: #ffe066;   /* blazing */
+  --gold-pure: #ffd60a;
+  --gold-bright: #ffeb47;
+  --gold-light: #fff7c2;
+
+  /* — Ink scale — deep warm-tinted neutrals. */
   --ink: #f0eee6;
+  --ink-deep: #050308;
+  --ink-bg: #0a0810;
+  --ink-surface: #14101a;
+  --ink-line: rgba(255, 220, 100, 0.06);
   --dim: #6b6a64;
-  --line: rgba(255, 255, 255, 0.06);
-  --bg: #050505;
+
+  /* — Status colors (analytics only — never gameplay). */
+  --pos: #c4d68a;
+  --neg: #b85d4a;
+
+  /* — Aliases for back-compat. */
+  --line: var(--ink-line);
+  --bg: var(--ink-deep);
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
