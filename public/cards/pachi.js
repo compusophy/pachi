@@ -387,34 +387,32 @@ export function mount(slot, ctx) {
     for (let bi = balls.length - 1; bi >= 0; bi--) {
       const ball = balls[bi];
 
-      // Per-row aimed velocity. Compute the X velocity needed to reach the next
-      // inter-peg gap exactly, given current vY and the gap to the next row.
-      // (Old code used a fixed-magnitude push, which over/undershoots depending
-      // on rowSpacing and current vY — that's what made the ball land in the
-      // wrong slot ~80% of the time.)
+      // Absolute-target aim: track logicalCol (cumulative right-bounces from
+      // the path bits). At each row crossing, compute the X velocity that
+      // takes the ball from its CURRENT position to the inter-peg gap it
+      // should be in for the next row. Self-corrects any prior drift, no
+      // teleporting.
       const newRow = Math.floor((ball.position.y - topY) / rowSpacing);
       if (newRow > ball.currentRow && newRow < ROWS) {
         ball.currentRow = newRow;
         const bit = (ball.path >> newRow) & 1;
-        const stride = (bit ? +1 : -1) * (slotWidth * 0.5);   // exact next-gap offset
+        if (bit) ball.logicalCol++;
+
+        // Inter-peg gap K in row r is centered at:
+        //   W/2 + (K - (r+1)/2) * slotWidth
+        // After processing row `newRow`, ball belongs in gap `logicalCol` of
+        // that row, on its way down to row newRow+1.
+        const targetX = W / 2 + (ball.logicalCol - (newRow + 1) / 2) * slotWidth;
+
         const nextRowY = topY + (newRow + 1) * rowSpacing;
         const dy = Math.max(rowSpacing * 0.5, nextRowY - ball.position.y);
         const vY = Math.max(1.4, ball.velocity.y);
-        const timeToNext = dy / vY;                            // frames
-        const vx = stride / timeToNext;
+        const timeToNext = dy / vY;
+        // Aim at the target gap from current position. Clamp so we never get
+        // an absurd vx that visibly snaps; the next row will keep correcting.
+        const rawVx = (targetX - ball.position.x) / timeToNext;
+        const vx   = Math.max(-3.5, Math.min(3.5, rawVx));
         Matter.Body.setVelocity(ball, { x: vx, y: vY });
-      }
-
-      // Hard snap on slot-zone entry — guarantees the ball physically lands in
-      // the contract's authoritative slot, not whichever neighbor the bounce
-      // dynamics drifted toward. After good aiming above this is a tiny snap;
-      // worst case it's a ~half-slot teleport that's masked by the slot
-      // dividers.
-      if (!ball.snapped && ball.position.y > slotsY - ballR * 0.5) {
-        ball.snapped = true;
-        const targetX = slotBounds[ball.expectedSlot].mid;
-        Matter.Body.setPosition(ball, { x: targetX, y: ball.position.y });
-        Matter.Body.setVelocity(ball, { x: 0, y: Math.max(ball.velocity.y, 2) });
       }
 
       // Stuck detector — if ball isn't progressing downward, kick it.
@@ -485,6 +483,7 @@ export function mount(slot, ctx) {
     ball.expectedSlot = popcount12(ball.path);
     ball.expectedMultBps = Number(ballMultBps);
     ball.currentRow = -1;
+    ball.logicalCol = 0;       // accumulates the right-bounce count via path bits
     ball.settled = false;
     ball.lastProgressY = ball.position.y;
     ball.lastProgressT = performance.now();

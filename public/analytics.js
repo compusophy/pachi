@@ -2,7 +2,14 @@
 // metrics (RTP, house edge, per-wallet table) and renders into a target
 // element. No data is faked; everything is computed from on-chain logs.
 
-const PACHI_ADDR = "0xbc42C1a7815098BA4321B7bc1Bce0137Fd055E56";
+const PACHI_ADDR  = "0xbc42C1a7815098BA4321B7bc1Bce0137Fd055E56";
+// Block the current Pachi was deployed at — Tempo Moderato RPC rejects
+// `fromBlock: "earliest"` on getLogs, and we want to skip irrelevant history
+// either way. Update this whenever the contract is redeployed.
+const DEPLOY_BLOCK = 14440175n;
+// Conservative window for chunked getLogs — Tempo's RPC tolerates ranges up
+// to ~10k blocks; keep some headroom.
+const CHUNK_SIZE   = 5000n;
 const PLAYED_EVENT_ABI = [
   { type: "event", name: "Played", inputs: [
     { indexed: true,  name: "player",       type: "address" },
