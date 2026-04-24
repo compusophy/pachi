@@ -46,19 +46,35 @@ body { display: flex; flex-direction: column; }
 
 .bal { font-weight: 700; mix-blend-mode: difference; }
 
-/* PACHI logo + dropdown (top-left) */
+/* PACHI logo + dropdown (top-left)
+   Gold tone (HSL 45°), glow layered at Fibonacci radii (3 / 8 / 21 / 55 px)
+   with opacities by inverse golden powers (1/φ → 1/φ⁴). Hover bumps the
+   inner two layers for a subtle "lit" response. */
 .logo-wrap { position: relative; }
 .logo {
   font-family: 'JetBrains Mono', monospace;
   font-weight: 800;
   font-size: 13px;
   letter-spacing: 0.236em;     /* 1/φ³ */
-  color: #fff;
+  color: #ffd60a;              /* gold */
   background: transparent;
   border: none;
   padding: 0;
   cursor: pointer;
-  mix-blend-mode: difference;
+  text-shadow:
+    0 0 3px  rgba(255, 246, 200, 0.62),  /* inner — 1/φ  */
+    0 0 8px  rgba(255, 214, 10,  0.38),  /* mid   — 1/φ² */
+    0 0 21px rgba(255, 140, 0,   0.24),  /* outer — 1/φ³ */
+    0 0 55px rgba(255, 100, 0,   0.15);  /* haze  — 1/φ⁴ */
+  transition: text-shadow 0.21s ease, color 0.21s ease;
+}
+.logo:hover, .logo[aria-expanded="true"] {
+  color: #ffeb47;
+  text-shadow:
+    0 0 5px  rgba(255, 247, 194, 0.85),
+    0 0 13px rgba(255, 214, 10,  0.62),
+    0 0 34px rgba(255, 140, 0,   0.38),
+    0 0 89px rgba(255, 100, 0,   0.24);
 }
 .logo-menu {
   position: absolute;
