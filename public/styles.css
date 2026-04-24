@@ -1,4 +1,6 @@
-/* shell — chrome only. cards bring their own visual language. */
+/* shell — chrome only. cards bring their own visual language.
+   Spacing follows the Fibonacci sequence (3, 5, 8, 13, 21, 34, 55…) and
+   ratio properties (letter-spacing, scales) follow inverse golden powers. */
 
 :root {
   --ink: #f0eee6;
@@ -30,15 +32,15 @@ body { display: flex; flex-direction: column; }
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  padding: 14px 18px;
-  font-size: 12px;
+  padding: 13px 21px;          /* Fibonacci */
+  font-size: 13px;             /* Fibonacci */
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.034em;     /* 1/φ⁵ */
   pointer-events: none;
   mix-blend-mode: difference;
   color: #fff;
 }
-.chrome.top { top: 0; padding-top: max(14px, env(safe-area-inset-top)); }
+.chrome.top { top: 0; padding-top: max(13px, env(safe-area-inset-top)); }
 
 .bal { font-weight: 700; }
 
@@ -51,16 +53,16 @@ body { display: flex; flex-direction: column; }
 .toast {
   position: fixed;
   top: 50%; left: 50%;
-  transform: translate(-50%, -50%) translateY(20px);
+  transform: translate(-50%, -50%) translateY(21px);
   background: #111;
   border: 1px solid var(--line);
-  padding: 12px 18px;
-  border-radius: 4px;
-  font-size: 11px;
-  letter-spacing: 0.05em;
+  padding: 13px 21px;          /* Fibonacci */
+  border-radius: 8px;          /* Fibonacci */
+  font-size: 13px;             /* Fibonacci */
+  letter-spacing: 0.055em;     /* ≈ 1/φ⁶ */
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.18s ease, transform 0.18s ease;
+  transition: opacity 0.21s ease, transform 0.21s ease;
   z-index: 100;
   max-width: 80vw;
   text-align: center;

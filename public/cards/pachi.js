@@ -80,7 +80,7 @@ export function mount(slot, ctx) {
       <div class="pachi-controls">
         <div class="pachi-pills" role="radiogroup">
           <button class="pachi-pill" data-n="1"   aria-pressed="true">
-            <span class="dot"></span>
+            <span class="dot"></span><span class="x">×1</span>
           </button>
           <button class="pachi-pill" data-n="10"  aria-pressed="false">
             <span class="dot"></span><span class="x">×10</span>
@@ -670,15 +670,21 @@ const PACHI_CSS = `
   display: flex; flex-direction: column; align-items: center; gap: 13px;
   margin-top: 13px;
 }
+/* Pill bar — same width as DROP (233 / Fibonacci), each pill claims 1/3 via
+   flex:1 so they're equal-width regardless of label length. Bar height is
+   233/φ³ ≈ 55 (Fibonacci) — height-to-width ratio is φ³:1. */
 .pachi-pills {
-  display: flex; gap: 8px;
+  display: flex;
+  width: 233px;
+  gap: 5px;
   padding: 5px;
   background: rgba(255,255,255,0.04);
   border-radius: 999px;
 }
 .pachi-pill {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 8px 13px;
+  flex: 1 1 0;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  padding: 8px 0;
   border-radius: 999px;
   border: none;
   background: transparent;
@@ -705,7 +711,7 @@ const PACHI_CSS = `
   font-family: 'JetBrains Mono', monospace;
   font-weight: 800;
   font-size: 21px;
-  letter-spacing: 0.34em;
+  letter-spacing: 0.382em;     /* 1/φ² */
   color: #0a0d18;
   background: #ffeb47;
   border: none;
@@ -726,7 +732,8 @@ const PACHI_CSS = `
 .pachi-btn[disabled] { opacity: 0.45; cursor: wait; box-shadow: none; }
 
 .pachi-stake {
-  font-size: 13px; letter-spacing: 0.18em; text-transform: lowercase;
+  font-size: 13px; letter-spacing: 0.236em;  /* 1/φ³ */
+  text-transform: lowercase;
   opacity: 0.5; font-variant-numeric: tabular-nums;
 }
 `;
