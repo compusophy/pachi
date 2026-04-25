@@ -53,4 +53,36 @@ contract AdminFacet {
     function appVersion() external view returns (uint256) {
         return LibPachi.s().appVersion;
     }
+
+    /// @notice Wipe all on-chain analytics state — globals + per-player + the
+    /// enumerable players list. Use sparingly (e.g., before public launch to
+    /// discard pre-launch test data). Token balances, registration status,
+    /// allowance cooldowns and the multiplier table are NOT touched.
+    /// Single-call iterates playersList — fine for small N. If we ever need
+    /// to reset thousands of players we can paginate, but the cut is cheap.
+    event StatsReset(uint256 playersCleared);
+
+    function resetStats() external {
+        LibDiamond.enforceIsContractOwner();
+        LibPachi.Storage storage s = LibPachi.s();
+
+        uint256 n = s.playersList.length;
+        for (uint256 i; i < n; i++) {
+            address p = s.playersList[i];
+            delete s.playerPlays[p];
+            delete s.playerBalls[p];
+            delete s.playerWagered[p];
+            delete s.playerPaid[p];
+            delete s.playerBestPayoutBps[p];
+            delete s.seenPlayer[p];
+        }
+        delete s.playersList;
+
+        s.totalPlays = 0;
+        s.totalBalls = 0;
+        s.totalWagered = 0;
+        s.totalPaid = 0;
+
+        emit StatsReset(n);
+    }
 }
