@@ -67,13 +67,16 @@ function tick() {
   for (let i = balls.length - 1; i >= 0; i--) {
     const b = balls[i];
     const t = Math.min(1, (now - b.t0) / b.duration);
-    // easeOutCubic for outbound (slows on arrival), easeInCubic
-    // for incoming-to-wallet (accelerates as it nears) — chosen by sign
-    // of arc: positive arc (descending into game) eases out, negative
-    // arc (rising to wallet) eases in. Feels physical.
-    const ease = b.arc >= 0
-      ? 1 - Math.pow(1 - t, 3)
-      : t * t * t;
+    // Easing options:
+    //   "in"   — easeInCubic, accelerates (gravity drop)
+    //   "out"  — easeOutCubic, decelerates (soft landing)
+    //   "linear" — linear (used for static-hold ball)
+    //   default — sign-of-arc heuristic (positive bow=out, negative=in)
+    let ease;
+    if (b.ease === "in")          ease = t * t * t;
+    else if (b.ease === "out")    ease = 1 - Math.pow(1 - t, 3);
+    else if (b.ease === "linear") ease = t;
+    else ease = b.arc >= 0 ? 1 - Math.pow(1 - t, 3) : t * t * t;
 
     const x = b.x0 + (b.x1 - b.x0) * ease;
     // Parabolic vertical: linear path + sin-bowed offset of `arc` pixels
@@ -88,7 +91,11 @@ function tick() {
     const trailSteps = 3;
     for (let s = trailSteps; s >= 1; s--) {
       const tt = Math.max(0, t - s * 0.05);
-      const ee = b.arc >= 0 ? 1 - Math.pow(1 - tt, 3) : tt * tt * tt;
+      let ee;
+      if (b.ease === "in")          ee = tt * tt * tt;
+      else if (b.ease === "out")    ee = 1 - Math.pow(1 - tt, 3);
+      else if (b.ease === "linear") ee = tt;
+      else ee = b.arc >= 0 ? 1 - Math.pow(1 - tt, 3) : tt * tt * tt;
       const tx = b.x0 + (b.x1 - b.x0) * ee;
       const ty = b.y0 + (b.y1 - b.y0) * ee + Math.sin(tt * Math.PI) * b.arc;
       const ta = (1 - s / (trailSteps + 1)) * 0.4 * (1 - t);
@@ -148,6 +155,9 @@ export function flyBall(opts) {
     arc,
     radius = 8,
     onArrive,
+    // Optional ease override. "in" = accelerate (gravity drop),
+    // "out" = decelerate (soft landing), "linear" = constant.
+    ease,
   } = opts;
   const dy = toY - fromY;
   const defaultArc = Math.abs(dy) / PHI * (dy >= 0 ? 0.4 : -0.4);
@@ -159,6 +169,7 @@ export function flyBall(opts) {
     r: radius,
     t0: performance.now(),
     onArrive,
+    ease,
   });
 }
 

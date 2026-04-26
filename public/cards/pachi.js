@@ -690,57 +690,63 @@ export function mount(slot, ctx) {
     const catch_el = slot.querySelector("#ptotalwrap");
     if (!catch_el || !ctx.flux) return;
     const catch_r = catch_el.getBoundingClientRect();
-    const catchCx = catch_r.left + catch_r.width / 2;
-    const catchCy = catch_r.top  + catch_r.height * 0.55;
+    // Catch X = the SLOT'S column directly below. Balls from slot k pool
+    // under slot k. No B-lining to the catch's horizontal center —
+    // earlier code converged every emission on catchCx which made the
+    // tray look like it had ~3 fixed positions instead of accumulating
+    // naturally based on which slots fired. With per-slot drop columns
+    // a 100-ball jackpot round visibly piles balls on the EDGES (where
+    // 85× lives) and a sink-heavy round piles them in the MIDDLE.
+    const columnX = slotMidX;
+    // Catch Y near the bottom 70% — pool low like real plinko bins,
+    // leave the upper third for the digit readout to breathe.
+    const catchCy = catch_r.top + catch_r.height * 0.7;
 
-    // Three-stage choreography per emitted unit, synchronized:
-    //   1. DROP — straight gravity drop slot → catch (no horizontal bow)
-    //   2. HOLD — static at catch (visible accumulation while siblings finish)
-    //   3. RISE — collective up-flight catch → wallet, all balls together
-    // Earlier each ball did its own slot→catch→wallet trip so the catch
-    // never "filled" — balls left as fast as they arrived. The collective
-    // hold gives the user a beat to register the multiplied payout
-    // physically pooled in the tray before it lifts to the wallet.
-    const DROP_DURATION   = 380;
-    const PER_BALL_LAUNCH = 50;
+    const DROP_DURATION   = 420;
+    const PER_BALL_LAUNCH = 60;
     const COLLECTIVE_HOLD = 520;
     const lastDropArrives = (count - 1) * PER_BALL_LAUNCH + DROP_DURATION;
     const upLaunchAt      = lastDropArrives + COLLECTIVE_HOLD;
 
     for (let i = 0; i < count; i++) {
       roundFluxRemaining++;
-      // Spread balls horizontally so siblings stack visibly inside the
-      // tray instead of all stacking on the same x.
-      const spread = count > 1
-        ? ((i - (count - 1) / 2) / (count - 1)) * Math.min(catch_r.width * 0.5, 144)
-        : 0;
-      const catchX  = catchCx + spread;
-      const catchY  = catchCy + (Math.random() - 0.5) * 8;
+      // Tiny jitter within the slot's own column — ±35% of slotWidth so
+      // siblings don't stack on one pixel but still read as "from this
+      // slot" (not migrating across the tray).
+      const jitterX = (Math.random() - 0.5) * slotWidth * 0.7;
+      // Stack each successive ball slightly higher so they accumulate
+      // visibly instead of all overlapping. Capped at 21px so the pile
+      // doesn't climb into the digit area on big emissions.
+      const stackY  = -Math.min(21, i * 3);
+      const catchX  = columnX + jitterX;
+      const catchY  = catchCy + stackY + (Math.random() - 0.5) * 4;
       const dropAt  = i * PER_BALL_LAUNCH;
       const myDropArrival = dropAt + DROP_DURATION;
       const myHoldDuration = Math.max(60, upLaunchAt - myDropArrival);
 
       setTimeout(() => {
-        // Stage 1: straight DROP into catch — arc:0 means no bow, pure
-        // vertical fall. easeOutCubic in flux gives the gravity feel.
+        // Stage 1: gravity drop slot → catch column. ease:"in"
+        // accelerates so the ball reads as falling under gravity (slow
+        // start, fast end) rather than the soft-landing easeOutCubic
+        // that arc:0 used to inherit by default.
         ctx.flux.flyBall({
           fromX: slotMidX, fromY: slotMidY,
           toX:   catchX,   toY:   catchY,
           duration: DROP_DURATION,
           arc: 0,
+          ease: "in",
           radius: Math.max(8, ballR),
           onArrive: () => {
-            // Stage 2: STATIC hold at catch — same coords on both ends
-            // so the ball renders in place for myHoldDuration ms. As
-            // siblings keep arriving, the tray visibly fills.
+            // Stage 2: static hold (linear ease, zero motion).
             ctx.flux.flyBall({
               fromX: catchX, fromY: catchY,
               toX:   catchX, toY:   catchY,
               duration: myHoldDuration,
               arc: 0,
+              ease: "linear",
               radius: Math.max(8, ballR),
               onArrive: () => {
-                // Stage 3: collective RISE to wallet apex.
+                // Stage 3: collective rise to wallet apex.
                 const wallet = ctx.walletAnchor && ctx.walletAnchor();
                 if (!wallet) {
                   roundFluxRemaining = Math.max(0, roundFluxRemaining - 1);
