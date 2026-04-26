@@ -10,7 +10,8 @@
     "sim:rtp":   "node sim/pachi-sim.mjs",
     "sim:aim":   "node sim/aim-validate.mjs",
     "sim:drift": "node sim/physics-drift.mjs",
-    "sim:onchain": "node sim/onchain-rtp.mjs"
+    "sim:onchain": "node sim/onchain-rtp.mjs",
+    "sim:edge":  "node sim/query-edge.mjs"
   },
   "dependencies": {
     "viem": "2.48.4"

@@ -37,7 +37,14 @@ const fmtPct  = (n) => `${(n * 100).toFixed(2)}%`;
 const fmtAddr = (a) => `${a.slice(0, 6)}…${a.slice(-4)}`;
 const fmtSignedUSD = (raw) => raw >= 0n ? `+${fmtUSD(raw)}` : `−${fmtUSD(-raw)}`;
 
-const TARGET_EDGE = 0.01618; // 1.618%
+// Theoretical edge derived from the on-chain MULTS table:
+//   sum(C(12,k) * MULTS[k]) / 4096 / 10000 = 0.983922 → edge = 0.016078
+// The contract comments call this the "1.618% house edge" (the φ ratio),
+// but the actual integer multipliers chosen approximate φ — they land at
+// 1.6078%, 1.02 bps short. Showing the dashboard's gap-to-target against
+// the TRUE on-chain theoretical (not the rounded φ label) lets the
+// operator see noise converge to zero rather than to ~+0.01 pp forever.
+const TARGET_EDGE = 0.016078;
 
 export async function render(targetEl, ctx) {
   targetEl.innerHTML = '<div class="analytics-loading">querying chain…</div>';
