@@ -248,13 +248,49 @@ function toast(msg, ms = 2400, opts = {}) {
   const el = document.createElement("div");
   el.className = "toast";
   if (opts.severity === "error") el.classList.add("error");
-  el.textContent = msg;
+  // Optional copyable payload — when present, the toast shows a "copy"
+  // button that dumps the full error blob to the clipboard so the user
+  // can paste back to triage. Used for tx reverts where the public toast
+  // text is a one-liner but the underlying error has the actual reason
+  // buried in shortMessage / metaMessages / cause.
+  if (opts.copyText) {
+    const txt = document.createElement("span");
+    txt.textContent = msg;
+    el.appendChild(txt);
+    const btn = document.createElement("button");
+    btn.className = "toast-copy";
+    btn.type = "button";
+    btn.textContent = "copy";
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      try {
+        await navigator.clipboard.writeText(opts.copyText);
+        btn.textContent = "copied";
+        setTimeout(() => { btn.textContent = "copy"; }, 1400);
+      } catch {
+        btn.textContent = "failed";
+      }
+    });
+    el.appendChild(btn);
+  } else {
+    el.textContent = msg;
+  }
   document.body.appendChild(el);
   requestAnimationFrame(() => el.classList.add("show"));
-  setTimeout(() => {
-    el.classList.remove("show");
-    setTimeout(() => el.remove(), 200);
-  }, ms);
+  // Errors with copy buttons stay until tapped — so the user can copy
+  // them. Auto-dismiss only when no copy button.
+  if (!opts.copyText) {
+    setTimeout(() => {
+      el.classList.remove("show");
+      setTimeout(() => el.remove(), 200);
+    }, ms);
+  } else {
+    // Click anywhere on the toast (other than copy btn) dismisses it.
+    el.addEventListener("click", () => {
+      el.classList.remove("show");
+      setTimeout(() => el.remove(), 200);
+    });
+  }
 }
 
 // Three-step onboarding (single-flight, idempotent):

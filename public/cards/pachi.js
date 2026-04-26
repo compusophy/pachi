@@ -1101,35 +1101,60 @@ export function mount(slot, ctx) {
         else setTimeout(launch, launchAt);
       }
     } catch (err) {
-      console.error(err);
-      const raw = err.shortMessage || err.message || "drop failed";
-      // Decode the contract's custom error name from viem's error shape
-      // and surface a player-friendly message instead of "transaction
-      // reverted on chain". metaMessages / cause / details may also
-      // carry the error name on different viem versions, so we scan
-      // everything we can reach.
+      // Build a rich, copyable diagnostic blob. Stuffs every field viem
+      // surfaces (shortMessage / metaMessages / details / cause chain)
+      // plus stack into a single text payload the user can paste back
+      // for triage. The toast displays a one-liner; the [copy] button
+      // hands over the full blob.
+      const collectCause = (e, depth = 0) => {
+        if (!e || depth > 4) return [];
+        const block = [
+          `--- cause ${depth} ---`,
+          `name:         ${e.name || "(none)"}`,
+          `shortMessage: ${e.shortMessage || "(none)"}`,
+          `message:      ${e.message || "(none)"}`,
+          `details:      ${e.details || "(none)"}`,
+          `metaMessages: ${(e.metaMessages || []).join(" | ") || "(none)"}`,
+          `data:         ${e.data ? JSON.stringify(e.data) : "(none)"}`,
+        ];
+        return [...block, ...collectCause(e.cause, depth + 1)];
+      };
       const blob = [
-        raw,
-        err.metaMessages?.join(" ") || "",
-        err.cause?.shortMessage || "",
-        err.cause?.message || "",
-        err.details || "",
-      ].join(" ");
+        `=== PACHI tx error ===`,
+        `time:    ${new Date().toISOString()}`,
+        `wallet:  ${ctx.account.address}`,
+        `n:       ${selectedN}`,
+        `stake:   ${stakePerBallRaw}`,
+        ``,
+        ...collectCause(err),
+        ``,
+        `--- stack ---`,
+        err.stack || "(no stack)",
+      ].join("\n");
+      // Console marker the user can grep in DevTools (and that I can
+      // ask them to look for): PACHI_ERROR>>>
+      console.error("PACHI_ERROR>>>\n" + blob + "\n<<<PACHI_ERROR");
+
+      // Player-facing one-liner. We scan the full blob (not just
+      // shortMessage) because the actual revert reason is often nested
+      // inside cause chains.
       let userMsg;
       if (/BankrollTooLow/i.test(blob)) {
-        userMsg = `bankroll too low for ×${selectedN} — try fewer balls`;
+        userMsg = "bankroll too low — house can't cover max payout";
       } else if (/BallsOutOfRange/i.test(blob)) {
         userMsg = "ball count must be 1–100";
       } else if (/transferFrom|insufficient (balance|allowance)|ERC20InsufficientBalance/i.test(blob)) {
         userMsg = "not enough PachiUSD for this stake";
-      } else if (/revert/i.test(blob)) {
-        userMsg = "transaction reverted";
+      } else if (/expiring nonce/i.test(blob)) {
+        userMsg = "tempo nonce error (config bug — copy details)";
       } else if (/timed out/i.test(blob)) {
         userMsg = "rpc timed out — try again";
+      } else if (/revert/i.test(blob)) {
+        userMsg = "tx reverted — copy details to debug";
       } else {
-        userMsg = raw;
+        userMsg = (err.shortMessage || err.message || "drop failed").slice(0, 80);
       }
-      ctx.toast(userMsg, 5200, { severity: "error" });
+      ctx.toast(userMsg, 0, { severity: "error", copyText: blob });
       // Reverse the optimistic deduction by re-syncing with chain truth.
       // AWAIT this so playInFlight stays held until the displayed balance
       // is back in sync — otherwise a rapid second click after an error

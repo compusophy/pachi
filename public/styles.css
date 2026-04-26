@@ -366,6 +366,34 @@ body { display: flex; flex-direction: column; }
 .toast.error.show {
   animation: toast-shake 0.42s cubic-bezier(.36,.07,.19,.97) 1;
 }
+/* Errors with a copy button must accept clicks (the base .toast is
+   pointer-events:none so toasts don't block UI). */
+.toast.error { pointer-events: auto; }
+/* Copy button inside an error toast — small affordance next to the
+   message text. Lets the user grab the full error blob (shortMessage +
+   metaMessages + cause + stack) for triage. Toast stays open until
+   tapped when the copy button is present. */
+.toast .toast-copy {
+  display: inline-block;
+  margin-left: 13px;
+  padding: 5px 10px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.21);
+  border-radius: 5px;
+  color: inherit;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.146em;
+  text-transform: uppercase;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.toast .toast-copy:hover { background: rgba(255, 255, 255, 0.15); }
+.toast.error .toast-copy {
+  background: rgba(255, 70, 70, 0.13);
+  border-color: rgba(255, 100, 100, 0.55);
+}
 @keyframes toast-shake {
   10%, 90% { transform: translate(calc(-50% - 1px), -50%); }
   20%, 80% { transform: translate(calc(-50% + 2px), -50%); }
