@@ -1011,11 +1011,9 @@ export function mount(slot, ctx) {
       await withTimeout(ensureApproval(), 45_000, "approve");
 
       // Pre-flight simulate — catches BankrollTooLow / BallsOutOfRange /
-      // insufficient-balance reverts BEFORE we deduct optimistically and
-      // burn nonces on a tx that just reverts. simulateContract runs the
-      // call as eth_call which throws with the contract's custom error
-      // name in shortMessage. Cheap (one RPC), high payoff (clean error
-      // messages instead of generic "transaction reverted on chain").
+      // insufficient-balance reverts BEFORE we deduct optimistically.
+      // Cheap (one eth_call), high payoff: clean error messages instead
+      // of "transaction reverted on chain".
       await withTimeout(
         ctx.client.simulateContract({
           address: PACHI_ADDR, abi: PACHI_ABI, functionName: "play",
@@ -1024,14 +1022,31 @@ export function mount(slot, ctx) {
         8_000, "simulate"
       );
 
-      // Simulate passed → safe to deduct. Only debit the displayed
-      // balance once we know the tx will land; before this point a
-      // reverted DROP would falsely tick the wallet down.
+      // Pick a GENEROUS explicit gas budget. Tempo's gas estimator
+      // returned ~115k for n=1 plays, but on-chain survey shows real
+      // play(1) gas usage ranges 114k–1.86M (huge variance from cold-
+      // storage hits on stats counters: first play of the day, first
+      // entry to a new players-list slot, etc). The under-estimated
+      // txs ran out of gas mid-call and reverted with the user paying
+      // 100k gas for nothing.
+      //
+      // Survey of last 8000 blocks of successful plays:
+      //   n=1   gasUsed range  113k – 1.86M  (avg 502k)
+      //   n=10  gasUsed range  141k – 1.89M  (avg 360k)
+      //   n=100 gasUsed range  401k – 406k   (avg 402k)
+      //
+      // 2_500_000n is comfortable above the worst observed and well
+      // below typical block gas. Unused gas is refunded so over-budget
+      // costs nothing extra.
+      const gasBudget = 2_500_000n;
+
+      // Simulate passed → safe to deduct.
       if (ctx.optimisticDeduct) ctx.optimisticDeduct(runningStakeRaw);
 
       const hash = await withTimeout(
         writeWithRetry({
           address: PACHI_ADDR, abi: PACHI_ABI, functionName: "play", args: [BigInt(n)],
+          gas: gasBudget,
         }),
         45_000, "tx submit"
       );
@@ -1039,11 +1054,37 @@ export function mount(slot, ctx) {
         ctx.client.waitForTransactionReceipt({ hash }),
         60_000, "receipt"
       );
-      // Explicit revert check — tx may "succeed" at the RPC level but
-      // revert in execution (e.g., insufficient PachiUSD). receipt.status
-      // is "success" or "reverted". Better error than "no Played event".
+      // Explicit revert check. Tx may "succeed" at the RPC level but
+      // revert in execution. The receipt itself doesn't carry a reason —
+      // we recreate the revert by re-running simulateContract at the
+      // block JUST BEFORE this tx so viem decodes the actual contract
+      // error name (BankrollTooLow, etc) instead of leaving us with
+      // a useless "transaction reverted on chain" string.
       if (receipt.status && receipt.status !== "success") {
-        throw new Error("transaction reverted on chain");
+        let postmortem = null;
+        try {
+          await ctx.client.simulateContract({
+            address: PACHI_ADDR, abi: PACHI_ABI, functionName: "play",
+            args: [BigInt(n)], account: ctx.account,
+            blockNumber: receipt.blockNumber > 0n ? receipt.blockNumber - 1n : undefined,
+          });
+          // If somehow the simulate passes here, it means state changed
+          // between submit and execution. Capture that fact.
+          postmortem = new Error("tx reverted but pre-block simulate passed (state race)");
+        } catch (sim) {
+          postmortem = sim;
+        }
+        const e = new Error(
+          postmortem.shortMessage || postmortem.message || "transaction reverted on chain"
+        );
+        e.cause = postmortem;
+        e.receipt = {
+          hash: receipt.transactionHash,
+          block: String(receipt.blockNumber),
+          gasUsed: String(receipt.gasUsed),
+          status: receipt.status,
+        };
+        throw e;
       }
       const events = ctx.parseEventLogs({ abi: PACHI_ABI, eventName: "Played", logs: receipt.logs });
       if (!events.length) throw new Error("no Played event");
@@ -1119,12 +1160,23 @@ export function mount(slot, ctx) {
         ];
         return [...block, ...collectCause(e.cause, depth + 1)];
       };
+      const stakeUSD  = "$" + (Number(stakePerBallRaw) / 1e6).toFixed(2);
+      const totalUSD  = "$" + (Number(runningStakeRaw)  / 1e6).toFixed(2);
+      const receiptInfo = err.receipt ? [
+        ``,
+        `--- receipt ---`,
+        `hash:    ${err.receipt.hash}`,
+        `block:   ${err.receipt.block}`,
+        `gasUsed: ${err.receipt.gasUsed}`,
+        `status:  ${err.receipt.status}`,
+        `explorer: https://explore.moderato.tempo.xyz/tx/${err.receipt.hash}`,
+      ] : [];
       const blob = [
         `=== PACHI tx error ===`,
         `time:    ${new Date().toISOString()}`,
         `wallet:  ${ctx.account.address}`,
-        `n:       ${selectedN}`,
-        `stake:   ${stakePerBallRaw}`,
+        `n:       ${selectedN}  (stake/ball ${stakeUSD}, total ${totalUSD})`,
+        ...receiptInfo,
         ``,
         ...collectCause(err),
         ``,
