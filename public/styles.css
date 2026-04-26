@@ -56,7 +56,11 @@ body { display: flex; flex-direction: column; }
   position: fixed;
   left: 0; right: 0;
   z-index: 50;
-  padding: 13px 21px;
+  /* Square margins: 13px on every side so PACHI logo and cog button
+     read as equal-distance from their respective corners. Earlier the
+     21px sides + 13px top broke the corner symmetry — cog had ~21px
+     gap from the right edge but only 13px from the top. */
+  padding: 13px;
   font-size: 13px;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.034em;
@@ -409,7 +413,10 @@ body { display: flex; flex-direction: column; }
   align-items: center;
   justify-content: center;
   padding: 21px;
-  z-index: 200;
+  /* Must beat the portaled .pachi-total-overlay (z:400) and the flux
+     canvas (z:300). Earlier z:200 left the catch-tray digit poking
+     through the analytics modal. */
+  z-index: 500;
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }

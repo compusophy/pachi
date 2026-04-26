@@ -323,8 +323,36 @@ export function mount(slot, ctx) {
       envelope: { attack: 0.005, decay: 0.55, sustain: 0.05, release: 0.55 },
       volume: -16,
     }).connect(absorbReverb);
-    audio = { dest, click, land, jackpot, absorb, absorbReverb };
+    // DROP press — a satisfying "game start" chord that fires the
+    // moment the user taps DROP, before any balls fall. Triangle wave
+    // for warmth, short attack so the tap is immediately rewarded,
+    // light reverb for depth. Plays a G major triad (G4 B4 D5)
+    // ascending fast — instant dopamine ping.
+    const dropReverb = new Tone.Reverb({ decay: 0.8, wet: 0.21 }).connect(dest);
+    const dropSyn = new Tone.PolySynth(Tone.Synth, {
+      oscillator: { type: "triangle" },
+      envelope: { attack: 0.005, decay: 0.34, sustain: 0.05, release: 0.34 },
+      volume: -8,
+    }).connect(dropReverb);
+    audio = { dest, click, land, jackpot, absorb, absorbReverb, dropSyn, dropReverb };
     return audio;
+  }
+
+  // Fire the DROP chord. Cheap (3 voices, short envelope), idempotent
+  // if audio not ready (silently no-ops). Called from the click handler
+  // BEFORE the ball-flux flight starts so the tap feels immediately
+  // acknowledged — earlier the first sound was a peg click ~600ms in.
+  function playDropChord() {
+    if (!audio || !audio.dropSyn) return;
+    try {
+      const t = Tone.now();
+      // Quick ascending arpeggio — G4 → B4 → D5, each 30ms apart, all
+      // sustained ~250ms. Reads as one chord but with motion: the
+      // listener's ear feels "things just started moving up".
+      audio.dropSyn.triggerAttackRelease("G4",  0.25, t);
+      audio.dropSyn.triggerAttackRelease("B4",  0.25, t + 0.03);
+      audio.dropSyn.triggerAttackRelease("D5",  0.25, t + 0.06);
+    } catch {}
   }
 
   // φ-rotated arpeggio over G major triad (G3 B3 D4 G4). Each call advances
@@ -996,6 +1024,10 @@ export function mount(slot, ctx) {
     // on iOS Safari after long backgrounding) doesn't block the round.
     try { await withTimeout(ensureAudio(), 2_000, "audio init"); }
     catch (err) { console.warn("ensureAudio skipped:", err); }
+    // Fire DROP chord immediately so the tap is acknowledged with sound
+    // BEFORE the ball flight begins. (Earlier the first audible sound
+    // was a peg click 600ms+ later.)
+    playDropChord();
 
     // reset round state immediately
     runningTotalBps = 0;
@@ -1297,6 +1329,8 @@ export function mount(slot, ctx) {
         audio.jackpot.dispose();
         audio.absorb?.dispose();
         audio.absorbReverb?.dispose();
+        audio.dropSyn?.dispose();
+        audio.dropReverb?.dispose();
         audio.dest.dispose();
       } catch {}
     }
@@ -1322,12 +1356,11 @@ const PACHI_CSS = `
 .pachi-root {
   position: absolute; inset: 0;
   display: flex; flex-direction: column; align-items: center;
-  /* Center the whole stack so leftover viewport space distributes evenly
-     above the apex and below the DROP. On tall phones this kills the
-     "tons of space below the catch" gap that flex-start + margin-top:auto
-     was producing. Side gutters match chrome's 21px (PACHI / cog align). */
+  /* Side gutters 13px match chrome's 13px so the pyramid edges align
+     vertically with PACHI logo and cog button. justify-content: center
+     distributes leftover viewport vertical space evenly. */
   justify-content: center;
-  padding: 55px 21px 21px;
+  padding: 55px 13px 21px;
   gap: 0;     /* pyramid + slot row + catch flow as one column */
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
   color: #fff;
@@ -1401,6 +1434,16 @@ const PACHI_CSS = `
   transition: color 0.21s ease, text-shadow 0.21s ease, opacity 0.21s ease;
   color: #fff;
   opacity: 0;            /* revealed on first ball arriving in the catch */
+  /* Black halo + faint gold haze so the digit stays legible when flux
+     balls pile in the tray. The user explicitly didn't want a
+     container border / fill — the halo is on the GLYPH itself, doesn't
+     box anything. applyGoldIntensity() overrides text-shadow on big
+     wins (the gold glow IS the win signal); base halo only matters at
+     rest. */
+  text-shadow:
+    0 0 4px  rgba(0, 0, 0, 0.85),
+    0 0 8px  rgba(0, 0, 0, 0.55),
+    0 0 13px rgba(255, 214, 10, 0.21);
 }
 /* When portaled to body, position-fixed at the catch tray's center so
    it stacks above the flux overlay (z:300). 400 > 300 wins. */

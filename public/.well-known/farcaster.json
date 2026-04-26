@@ -6,7 +6,7 @@
     "homeUrl": "https://pachi-six.vercel.app",
     "imageUrl": "https://pachi-six.vercel.app/og.svg",
     "splashImageUrl": "https://pachi-six.vercel.app/icon.svg",
-    "splashBackgroundColor": "#0a0810",
+    "splashBackgroundColor": "#000000",
     "subtitle": "multi-ball plinko",
     "description": "PACHI — multi-ball Plinko on Tempo. Drop, cascade, win.",
     "primaryCategory": "games",
