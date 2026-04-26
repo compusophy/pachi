@@ -4,6 +4,19 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
 <title>pachi</title>
+<meta property="og:title" content="PACHI" />
+<meta property="og:description" content="Multi-ball Plinko. Drop, cascade, win." />
+<meta property="og:image" content="https://pachi-six.vercel.app/og.svg" />
+<meta property="og:url" content="https://pachi-six.vercel.app" />
+<meta name="twitter:card" content="summary_large_image" />
+<!-- Farcaster Mini App embed. When the URL is shared in Farcaster, this
+     renders as an interactive embed instead of a plain link. The manifest
+     at /.well-known/farcaster.json defines the app metadata; this tag is
+     the per-page embed config. accountAssociation in the manifest is
+     intentionally unsigned for now — sign via
+     https://farcaster.xyz/~/developers/mini-apps/manifest?domain=pachi-six.vercel.app
+     to enable discovery. The app still works as a Mini App without it. -->
+<meta name="fc:miniapp" content='{"version":"1","imageUrl":"https://pachi-six.vercel.app/og.svg","button":{"title":"DROP","action":{"type":"launch_frame","name":"PACHI","url":"https://pachi-six.vercel.app","splashImageUrl":"https://pachi-six.vercel.app/icon.svg","splashBackgroundColor":"#0a0810"}}}' />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300;400;500;600;700&display=swap" />
@@ -17,9 +30,31 @@
     <div class="logo-menu" id="logoMenu" role="menu">
       <button class="logo-menu-item" data-action="claim"     role="menuitem">claim daily</button>
       <button class="logo-menu-item" data-action="analytics" role="menuitem">analytics</button>
+      <button class="logo-menu-item" data-action="brandkit"  role="menuitem">brand kit</button>
     </div>
   </div>
   <div class="bal" id="bal">···</div>
+  <div class="cog-wrap">
+    <button class="cog" id="cog" aria-haspopup="true" aria-expanded="false" aria-label="settings">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="3"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+      </svg>
+    </button>
+    <div class="cog-menu" id="cogMenu" role="menu">
+      <div class="cog-addr-row">
+        <span class="cog-addr" id="cogAddrText" title="">—</span>
+        <button class="cog-copy" id="cogCopy" aria-label="copy address">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="9" y="9" width="11" height="11" rx="2"/>
+            <path d="M5 15V5a2 2 0 0 1 2-2h10"/>
+          </svg>
+        </button>
+      </div>
+      <button class="cog-menu-item" data-action="import" role="menuitem">IMPORT</button>
+      <button class="cog-menu-item" data-action="export" role="menuitem">EXPORT</button>
+    </div>
+  </div>
 </header>
 
 <main id="stage" class="stage"></main>

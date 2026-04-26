@@ -4,6 +4,10 @@ pragma solidity ^0.8.24;
 import { LibPachi } from "./LibPachi.sol";
 import { LibDiamond } from "../diamond/LibDiamond.sol";
 
+interface IPachiUSDMint {
+    function mint(address to, uint256 amount) external;
+}
+
 /// @title AdminFacet
 /// @notice Owner-only knobs: stake, withdraw, fund, multiplier table edits,
 /// and the appVersion bump used for client/contract version sync.
@@ -29,6 +33,17 @@ contract AdminFacet {
         LibPachi.Storage storage s = LibPachi.s();
         s.token.transferFrom(msg.sender, address(this), amount);
         emit Funded(msg.sender, amount);
+    }
+
+    /// @notice Owner-only mint of PachiUSD to an arbitrary address. Used to
+    /// pre-fund the server-side invite treasury so /api/redeem-invite can
+    /// transfer to invitees. Additive selector — does NOT require an
+    /// appVersion bump (no client-relevant semantics changed).
+    event AdminMinted(address indexed to, uint256 amount);
+    function adminMint(address to, uint256 amount) external {
+        LibDiamond.enforceIsContractOwner();
+        IPachiUSDMint(address(LibPachi.s().token)).mint(to, amount);
+        emit AdminMinted(to, amount);
     }
 
     function setMults(uint32[13] calldata newMults) external {

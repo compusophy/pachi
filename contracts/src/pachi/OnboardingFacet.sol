@@ -10,9 +10,10 @@ interface IPachiUSD {
 
 /// @title OnboardingFacet
 /// @notice Phase 2 — register users and hand out daily play allowance.
-/// On testnet anyone can self-register (no invite gate). Invite-binding
-/// (Farcaster FID) is deferred to Phase 2.B once the mini-app ships.
-/// All token mints go through s.token (which is now the PachiUSD address
+/// Anyone can self-register (no on-chain invite gate). Hand-distributed
+/// invite codes (off-chain, redeemed via /api/redeem-invite calling
+/// AdminFacet.adminMint) supplement the starter grant — see the invite
+/// flow in public/shell.js. All token mints go through s.token (PachiUSD
 /// after the Phase 2 cut).
 contract OnboardingFacet {
     uint256 public constant STARTER_GRANT     = 1_000e6;   // $1000 (6 dec)

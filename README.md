@@ -10,7 +10,10 @@ Multi-ball Plinko on the Tempo blockchain. Per-user wallets, on-chain RNG,
 | Path | What |
 |---|---|
 | `public/` | Static frontend (no build step). Vercel serves from here. |
+| `public/flux.js` | Viewport canvas overlay; animates balls between DOM elements. |
+| `public/.well-known/farcaster.json` | Mini App manifest. Frame fields populated; signing optional. |
 | `api/faucet.js` | Vercel serverless: proxies `tempo_fundAddress` for new wallets. |
+| `api/redeem-invite.js` | Vercel serverless: validates invite code → adminMint PachiUSD. |
 | `contracts/` | Foundry project — Diamond + facets + PachiUSD. |
 | `sim/` | Node Monte Carlo + real-physics drift simulator + on-chain RTP aggregator. |
 | `CLAUDE.md` | Project guide for AI sessions / quick orientation. |
@@ -37,7 +40,7 @@ Facets installed:
 - `DiamondCutFacet`, `DiamondLoupeFacet`, `OwnershipFacet` (generic)
 - `GameFacet` — `play(uint256 n)`, on-chain stats counters
 - `StatsFacet` — O(1) view aggregates for analytics
-- `AdminFacet` — `setStake/withdraw/fund/setMults/bumpVersion/appVersion`
+- `AdminFacet` — `setStake/withdraw/fund/setMults/bumpVersion/appVersion/resetStats/adminMint`
 - `OnboardingFacet` — `register/claimDailyAllowance`
 
 PachiUSD is a separate ERC20 (6 decimal). The diamond is its only minter.
@@ -111,12 +114,19 @@ cast send 0x71e767bf661d6294c88953d640f0fc792a4c5086 \
 
 ## Roadmap → mainnet
 
-- Invite mutual rewards on first play (Sybil-resistant via Farcaster FID)
-- Farcaster mini-app — use Warpcast wallet, invite via Frames
-- Stripe credit-card → on-chain USDC (Tempo's Stripe integration)
-- Mainnet deploy (same code, different RPC, real funds)
-- Convertible PACHI ↔ USDC peg
+- ✅ Hand-distributed invite system (`/invite/<code>` URLs, server-side
+  treasury that adminMints PachiUSD on redeem)
+- ✅ Farcaster Mini App embed (meta tag + manifest — operator can sign
+  the manifest later to enable discovery; the embed already works)
+- PACHI ↔ USDC peg working on testnet (must be solid before mainnet)
 - Player leaderboard (separate surface from operator analytics)
+- Mainnet deploy (same code, different RPC, real funds)
+- Stripe credit-card → on-chain USDC (Tempo's Stripe integration)
+
+The closed visual loop (wallet → game → outcome → wallet, with the SAME
+yellow gradient ball moving between every surface via the `flux.js`
+canvas overlay) is in place. Optimistic balance updates instantly on
+DROP. See `CLAUDE.md` § "The closed loop" for the full model.
 
 ## License
 

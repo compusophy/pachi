@@ -149,11 +149,60 @@ export async function render(targetEl, ctx) {
         `).join('')}
       </tbody>
     </table>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:21px;font-size:10px;letter-spacing:.18em;text-transform:uppercase;opacity:.55">
-      <button id="analyticsRefresh" style="background:transparent;border:1px solid var(--ink-line);color:var(--ink);font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.18em;padding:5px 13px;border-radius:5px;cursor:pointer;text-transform:uppercase">refresh</button>
-      <span>contract v${version.toString()} · ${fmtAddr(PACHI_DIAMOND)}</span>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:21px;font-size:10px;letter-spacing:.18em;text-transform:uppercase;opacity:.85">
+      <div style="display:flex;gap:8px">
+        <button id="analyticsRefresh" style="background:transparent;border:1px solid var(--ink-line);color:var(--ink);font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.18em;padding:5px 13px;border-radius:5px;cursor:pointer;text-transform:uppercase">refresh</button>
+        <button id="analyticsCopy" style="background:transparent;border:1px solid var(--ink-line);color:var(--ink);font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.18em;padding:5px 13px;border-radius:5px;cursor:pointer;text-transform:uppercase">copy json</button>
+      </div>
+      <span style="opacity:.55">contract v${version.toString()} · ${fmtAddr(PACHI_DIAMOND)}</span>
     </div>
   `;
 
   targetEl.querySelector("#analyticsRefresh")?.addEventListener("click", () => render(targetEl, ctx));
+
+  // Copy the full analytics payload (house aggregates + per-player rows)
+  // as JSON so the operator can paste into chat / a spreadsheet / a tool.
+  // BigInts → strings (JSON has no native BigInt). Includes timestamp +
+  // contract version so a copied snapshot is self-describing.
+  const copyBtn = targetEl.querySelector("#analyticsCopy");
+  if (copyBtn) {
+    copyBtn.addEventListener("click", async () => {
+      const payload = {
+        capturedAt: new Date().toISOString(),
+        contract: { address: PACHI_DIAMOND, version: version.toString() },
+        house: {
+          totalPlays:    totalPlays.toString(),
+          totalBalls:    totalBalls.toString(),
+          totalWagered:  totalWagered.toString(),
+          totalPaid:     totalPaid.toString(),
+          uniqueWallets: uniqueWallets.toString(),
+          realRTP:       realRtp,
+          realEdge:      realEdge,
+          targetEdge:    TARGET_EDGE,
+          edgeDeltaPP:   edgeDelta * 100,
+        },
+        players: players.map(p => ({
+          addr:    p.addr,
+          plays:   p.plays,
+          balls:   p.balls.toString(),
+          wagered: p.wagered.toString(),
+          paid:    p.paid.toString(),
+          net:     p.net.toString(),
+          rtp:     p.rtp,
+        })),
+      };
+      const json = JSON.stringify(payload, null, 2);
+      try {
+        await navigator.clipboard.writeText(json);
+        copyBtn.textContent = "copied";
+        copyBtn.style.color = "var(--gold-pure)";
+        setTimeout(() => {
+          copyBtn.textContent = "copy json";
+          copyBtn.style.color = "";
+        }, 1400);
+      } catch {
+        ctx.toast?.("copy failed");
+      }
+    });
+  }
 }

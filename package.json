@@ -12,6 +12,9 @@
     "sim:drift": "node sim/physics-drift.mjs",
     "sim:onchain": "node sim/onchain-rtp.mjs"
   },
+  "dependencies": {
+    "viem": "2.48.4"
+  },
   "devDependencies": {
     "matter-js": "0.20.0"
   }

@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 400" width="600" height="400">
+  <!-- Embed image (3:2). Procedural — no fake screenshot, just the brand:
+       ink background, PACHI wordmark, the ball glyph as a literal yellow
+       gradient ball (matching the in-game ball). All Fibonacci spacing. -->
+  <defs>
+    <radialGradient id="ball" cx="40%" cy="40%" r="65%">
+      <stop offset="0%"  stop-color="#fff7c2"/>
+      <stop offset="55%" stop-color="#ffeb47"/>
+      <stop offset="100%" stop-color="#c89200"/>
+    </radialGradient>
+    <radialGradient id="bg" cx="50%" cy="0%" r="80%">
+      <stop offset="0%"  stop-color="#1a1410" stop-opacity="0.65"/>
+      <stop offset="100%" stop-color="#0a0810" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="logoGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3" result="b1"/>
+      <feGaussianBlur stdDeviation="8" in="SourceGraphic" result="b2"/>
+      <feGaussianBlur stdDeviation="21" in="SourceGraphic" result="b3"/>
+      <feMerge>
+        <feMergeNode in="b3"/>
+        <feMergeNode in="b2"/>
+        <feMergeNode in="b1"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="ballGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="13" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="600" height="400" fill="#0a0810"/>
+  <rect width="600" height="400" fill="url(#bg)"/>
+
+  <!-- Procedural peg dots (the pyramid lattice referenced visually) -->
+  <g fill="#332a17" opacity="0.55">
+    <circle cx="280" cy="290" r="3"/><circle cx="300" cy="290" r="3"/><circle cx="320" cy="290" r="3"/>
+    <circle cx="270" cy="305" r="3"/><circle cx="290" cy="305" r="3"/><circle cx="310" cy="305" r="3"/><circle cx="330" cy="305" r="3"/>
+    <circle cx="260" cy="320" r="3"/><circle cx="280" cy="320" r="3"/><circle cx="300" cy="320" r="3"/><circle cx="320" cy="320" r="3"/><circle cx="340" cy="320" r="3"/>
+    <circle cx="250" cy="335" r="3"/><circle cx="270" cy="335" r="3"/><circle cx="290" cy="335" r="3"/><circle cx="310" cy="335" r="3"/><circle cx="330" cy="335" r="3"/><circle cx="350" cy="335" r="3"/>
+  </g>
+
+  <!-- Wordmark + ball glyph, golden-ratio sized + spaced -->
+  <g filter="url(#logoGlow)">
+    <text x="300" y="180"
+          font-family="'IBM Plex Mono', ui-monospace, monospace"
+          font-size="89" font-weight="800"
+          letter-spacing="13"
+          fill="#ffd60a"
+          text-anchor="middle">PACHI</text>
+  </g>
+
+  <!-- The ball — same yellow radial gradient as the in-game physics ball -->
+  <g filter="url(#ballGlow)">
+    <circle cx="300" cy="240" r="21" fill="url(#ball)"/>
+  </g>
+
+  <text x="300" y="375"
+        font-family="'IBM Plex Mono', ui-monospace, monospace"
+        font-size="13" font-weight="500"
+        letter-spacing="4"
+        fill="#9c772a"
+        text-anchor="middle">MULTI-BALL PLINKO</text>
+</svg>

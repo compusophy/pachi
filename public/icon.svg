@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <!-- Square icon. Same ball, centered, on ink-deep background. Used as
+       the splash + manifest iconUrl. -->
+  <defs>
+    <radialGradient id="ball" cx="40%" cy="40%" r="65%">
+      <stop offset="0%"  stop-color="#fff7c2"/>
+      <stop offset="55%" stop-color="#ffeb47"/>
+      <stop offset="100%" stop-color="#c89200"/>
+    </radialGradient>
+    <filter id="g" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="13" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <rect width="200" height="200" rx="34" fill="#0a0810"/>
+  <g filter="url(#g)">
+    <circle cx="100" cy="100" r="55" fill="url(#ball)"/>
+  </g>
+</svg>

@@ -22,13 +22,18 @@ Live: https://pachi-six.vercel.app — Repo: https://github.com/compusophy/pachi
 
 ```
 public/                ← Vercel static (frontend)
-  index.html
-  shell.js             ← wallet, ctx, version check, modal wiring
-  styles.css           ← shell + brand palette (gold scale + ink scale)
-  cards/pachi.js       ← Plinko card: physics, audio, gold intensity
-  analytics.js         ← StatsFacet view-call dashboard
+  index.html           ← header: logo (L) | wallet ● (mid) | settings cog (R) + fc:miniapp meta
+  shell.js             ← wallet, ctx, optimistic balance, cog dropdown, modal wiring
+  styles.css           ← shell + brand palette + universal .ball-glyph
+  flux.js              ← viewport canvas overlay; flyBall() animates balls between DOM anchors
+  cards/pachi.js       ← Plinko card: physics, audio, DROP+LAND flux choreography
+  analytics.js         ← StatsFacet view-call dashboard (operator surface — keeps $)
+  brandkit.js          ← in-app design-language reference modal
+  og.svg, icon.svg     ← Farcaster Mini App embed image (3:2) + square icon
+  .well-known/farcaster.json  ← Mini App manifest (frame fields filled, accountAssociation NOT signed yet)
 api/
   faucet.js            ← Vercel serverless: tempo_fundAddress proxy
+  redeem-invite.js     ← validates invite code → transfers PachiUSD from treasury
 contracts/             ← Foundry project
   src/
     Diamond.sol            ← EIP-2535 proxy
@@ -38,7 +43,7 @@ contracts/             ← Foundry project
       LibPachi.sol         ← AppStorage struct (APPEND ONLY!)
       GameFacet.sol        ← play(), reads, on-chain stats counters
       StatsFacet.sol       ← view aggregates for analytics
-      AdminFacet.sol       ← setStake/withdraw/fund/setMults/bumpVersion
+      AdminFacet.sol       ← setStake/withdraw/fund/setMults/bumpVersion/resetStats/adminMint
       OnboardingFacet.sol  ← register, claimDailyAllowance
       PachiInit.sol        ← initial cut delegate
       PhaseTwoInit.sol     ← Phase 2 init (token swap, version bump)
@@ -55,6 +60,30 @@ sim/                   ← Node verification toolkit
 foundry.toml           ← (under contracts/) via_ir + optimizer enabled
 vercel.json, package.json
 ```
+
+## The closed loop (visual model)
+
+PACHI's economy is a **closed ball loop**. The yellow radial-gradient ball
+is the universal currency glyph — used by the wallet (top-middle of the
+header), the ×1/×10/×100 pill dots, the actual matter.js physics balls,
+the outcome pile, and the flux animation overlay. Same appearance
+everywhere, so motion between surfaces reads as the SAME ball changing
+location:
+
+  1. **DROP** — user clicks DROP → wallet balance is **instantly deducted**
+     (`ctx.optimisticDeduct`) → flux balls fly from the wallet glyph down
+     to the pyramid's spawn point. As each arrives, the corresponding
+     physics ball drops into the game.
+  2. **PYRAMID** — physics balls cascade through pegs (matter.js).
+  3. **LAND** — balls settle in slots, slot tier glow fires, audio + haptics
+     by tier. Outcome number appears under the pyramid.
+  4. **RETURN** — flux balls fly UP from the outcome zone to the wallet
+     glyph (parabolic up-arc). Each arrival ticks the wallet up via
+     `ctx.optimisticAdd`. Final `refreshBalance()` reconciles to chain truth.
+
+The flux overlay (`public/flux.js`) is one shared canvas pinned over the
+viewport. Cards expose `walletAnchor()` / `spawnAnchor()` / `outcomeAnchor()`
+to flux. See `project_pachi_ball_is_the_unit` memory for the rule.
 
 ## Architecture in one paragraph
 
@@ -115,10 +144,15 @@ cast send 0x71e767bf661d6294c88953d640f0fc792a4c5086 \
 
 ## Roadmap (Phase 2.B → mainnet)
 
-- **Invite mutual rewards**: `register(inviter)` mints to inviter on first
-  invitee play — Sybil-resistant via Farcaster FID binding (binding logic TBD).
-- **Farcaster mini-app**: use Warpcast wallet instead of localStorage burner;
-  invite codes work as Frame links.
+- **Invite system (shipped, hand-distributed)**: `/invite/<code>` URLs
+  pre-fund a new player's wallet. Codes live in Vercel env (`INVITE_CODES`
+  JSON map). `/api/redeem-invite` validates + transfers PachiUSD from a
+  server treasury wallet (`INVITE_TREASURY_KEY`); treasury was funded via
+  `AdminFacet.adminMint`. No on-chain Sybil resistance yet — operator
+  manages distribution. Pre-fund only; no mutual-reward / referral mints.
+- **Farcaster mini-app**: meta tags + `/.well-known/farcaster.json` only.
+  Embedded localStorage wallet stays universal — no FIDs, no Warpcast wallet
+  swap. Mini-app is presentation only; no SDK auth path.
 - **Stripe credit-card on-ramp**: Tempo has heavy Stripe integration — direct
   fiat → USDC on-chain. Closes the "first dollar" problem for normies.
 - **Mainnet deploy**: same code, different RPC/chain ID, fund with real assets.

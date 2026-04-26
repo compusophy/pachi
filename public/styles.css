@@ -16,11 +16,14 @@
   --gold-bright: #ffeb47;
   --gold-light: #fff7c2;
 
-  /* — Ink scale — deep warm-tinted neutrals. */
+  /* — Ink scale — flat black throughout. The earlier warm-tinted
+       background read as a different surface than the canvas and made
+       the pyramid look like it lived on top of "the website". One
+       background color across body + card now. */
   --ink: #f0eee6;
-  --ink-deep: #050308;
-  --ink-bg: #0a0810;
-  --ink-surface: #14101a;
+  --ink-deep: #000000;
+  --ink-bg: #000000;
+  --ink-surface: #0a0a0a;
   --ink-line: rgba(255, 220, 100, 0.06);
   --dim: #6b6a64;
 
@@ -53,9 +56,6 @@ body { display: flex; flex-direction: column; }
   position: fixed;
   left: 0; right: 0;
   z-index: 50;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   padding: 13px 21px;
   font-size: 13px;
   font-variant-numeric: tabular-nums;
@@ -63,13 +63,196 @@ body { display: flex; flex-direction: column; }
   pointer-events: none;
   color: #fff;
 }
-.chrome.top    { top: 0;    padding-top: max(13px, env(safe-area-inset-top)); }
-.chrome.bottom { bottom: 0; padding-bottom: max(13px, env(safe-area-inset-bottom)); justify-content: flex-start; }
+/* Top chrome is a 3-column grid: PACHI logo left, wallet balance centered,
+   settings cog right. The center column is `auto` so it sizes to its
+   content; the 1fr flanks keep the balance visually centered.
+   IMPORTANT: do NOT use env(safe-area-inset-top) here. Inside Farcaster
+   mini-app the inset reports as a much larger value than expected and
+   pushes our header down with a visible gap above PACHI/cog. A fixed
+   13px reads correctly across native browser, PWA, and FC mini-app. */
+.chrome.top {
+  top: 0;
+  padding-top: 13px;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 13px;
+}
+.chrome.top .logo-wrap { justify-self: start;  }
+.chrome.top .bal       { justify-self: center; }
+.chrome.top .cog-wrap  { justify-self: end;    }
+
+.chrome.bottom {
+  bottom: 0;
+  padding-bottom: 13px;
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+}
 
 /* Bits inside chrome that need clicks must opt in to pointer-events. */
 .chrome > * { pointer-events: auto; }
 
-.bal { font-weight: 700; mix-blend-mode: difference; }
+/* Wallet balance — top center. Slightly larger than the side chrome so it
+   reads as the primary number on screen. Sits visually above the outcome
+   (which lives under the pyramid). No mix-blend-mode: the chrome is
+   transparent over the card's dark background, so flat white digits + the
+   gold gradient ball glyph both read cleanly on their own. (Earlier
+   versions used difference blend to survive a brighter card background;
+   that's no longer needed since the card stays ink-deep.) */
+.bal {
+  font-weight: 700;
+  font-size: 18px;
+  letter-spacing: 0.034em;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #fff;
+}
+.bal-num { font-variant-numeric: tabular-nums; }
+/* Ball glyph (●) — the unit suffix on every player-facing currency display.
+   Opts out of the parent's mix-blend-mode so the gold tone stays gold rather
+   than inverting against whatever the canvas is rendering behind it. The glow
+   echoes the PACHI logo's text-shadow stack at smaller radii. */
+/* Universal ball glyph — the SAME visual as the in-game physics ball, used
+   wherever the player's currency surfaces (wallet, pill buttons, outcome
+   pile, flux animations). The yellow radial gradient (#fff7c2 → #ffeb47 →
+   #c89200) is clipped to the ● character via background-clip:text, so we
+   can size it like text and still get a 3D-ball look. A drop-shadow filter
+   provides the glow at Fibonacci radii (impossible with text-shadow once
+   text is filled by background-clip). See memory: project_pachi_ball_is_the_unit. */
+.ball-glyph {
+  display: inline-block;
+  background: radial-gradient(
+    circle at 32% 32%,
+    #fff7c2 0%,
+    #ffeb47 55%,
+    #c89200 100%
+  );
+  -webkit-background-clip: text;
+          background-clip: text;
+  -webkit-text-fill-color: transparent;
+          color: transparent;
+  /* drop-shadow renders the gold-glow halo around the *shape* of the
+     glyph rather than its bounding box (which is what text-shadow would
+     do post-clip). 4 stacked filters at Fibonacci radii echo the PACHI
+     wordmark's text-shadow stack. */
+  filter:
+    drop-shadow(0 0 3px  rgba(255, 246, 200, 0.62))
+    drop-shadow(0 0 8px  rgba(255, 214, 10,  0.38))
+    drop-shadow(0 0 13px rgba(255, 140, 0,   0.24));
+  line-height: 1;
+  /* opt out of any inherited mix-blend so the gold ball stays gold */
+  mix-blend-mode: normal;
+  isolation: isolate;
+}
+
+.bal .ball-glyph {
+  font-size: 1.05em;     /* a touch bigger than the digit cap-height */
+  vertical-align: -0.05em;
+  transition: transform 0.18s cubic-bezier(.4, 0, .2, 1.4);
+  will-change: transform;
+}
+/* Pulse class — applied briefly when a flux ball arrives, so the wallet
+   visibly "catches" each returning ball. cubic-bezier overshoot gives a
+   tiny springy bounce; class is removed after ~180ms via JS. */
+.bal .ball-glyph.pulse { transform: scale(1.34); }
+
+/* Settings cog — top right. shadcn-flat: no container border, no fill, just
+   the icon glyph itself. Square hit-target (Fibonacci 34px). */
+.cog-wrap { position: relative; }
+.cog {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--ink);
+  opacity: 0.65;
+  cursor: pointer;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+.cog:hover, .cog[aria-expanded="true"] { opacity: 1; color: var(--gold-pure); }
+.cog:focus { outline: none; }
+.cog svg { display: block; }
+
+/* Cog dropdown — mirrors logo-menu pattern but anchors to the right edge so
+   it doesn't overflow the viewport. */
+.cog-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: -8px;
+  background: #050308;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  min-width: 233px;          /* Fibonacci */
+  display: none;
+  box-shadow: 0 13px 34px -13px rgba(0,0,0,0.7);
+  mix-blend-mode: normal;
+}
+.cog-menu.show { display: block; }
+
+.cog-addr-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 13px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 5px;
+}
+.cog-addr {
+  flex: 1 1 auto;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 12px;
+  letter-spacing: 0.034em;
+  color: var(--ink);
+  opacity: 0.85;
+  font-feature-settings: 'tnum' 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cog-copy {
+  flex: 0 0 auto;
+  background: transparent;
+  border: none;
+  color: var(--ink);
+  opacity: 0.55;
+  padding: 5px;
+  cursor: pointer;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.cog-copy:hover { opacity: 1; background: rgba(255,255,255,0.05); }
+.cog-copy.copied { color: var(--gold-pure); opacity: 1; }
+
+.cog-menu-item {
+  display: block;
+  width: 100%;
+  background: transparent;
+  color: var(--ink);
+  border: none;
+  padding: 10px 13px;
+  text-align: left;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.236em;     /* 1/φ³ — uppercase chrome tracking */
+  text-transform: uppercase;
+  cursor: pointer;
+  border-radius: 5px;
+  opacity: 0.7;
+  transition: background 0.15s ease, opacity 0.15s ease;
+}
+.cog-menu-item:hover { background: rgba(255,255,255,0.05); opacity: 1; }
+.cog-menu-item:disabled { cursor: not-allowed; opacity: 0.35; }
 .version {
   font-size: 11px;
   font-weight: 400;
@@ -114,7 +297,7 @@ body { display: flex; flex-direction: column; }
   position: absolute;
   top: calc(100% + 8px);
   left: -8px;
-  background: #0a0d18;
+  background: #050308;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 5px;
@@ -162,6 +345,33 @@ body { display: flex; flex-direction: column; }
   text-align: center;
 }
 .toast.show { opacity: 1; transform: translate(-50%, -50%) translateY(0); }
+/* Error variant — used for transaction reverts and other hard failures.
+   The neutral toast was getting missed entirely; this one wears a red
+   border, a glow halo, and shakes once on appear so the user can't help
+   but notice. Error severity is set via toast(msg, ms, {severity:"error"}). */
+.toast.error {
+  background: #1d0608;
+  border-color: rgba(255, 70, 70, 0.62);
+  color: #ffd0c4;
+  box-shadow:
+    0 0 21px  rgba(255, 60, 60, 0.34),
+    0 0 55px  rgba(255, 60, 60, 0.18),
+    inset 0 0 13px rgba(255, 60, 60, 0.13);
+  font-weight: 700;
+  letter-spacing: 0.146em;
+  text-transform: uppercase;
+  font-size: 14px;
+  padding: 18px 26px;
+}
+.toast.error.show {
+  animation: toast-shake 0.42s cubic-bezier(.36,.07,.19,.97) 1;
+}
+@keyframes toast-shake {
+  10%, 90% { transform: translate(calc(-50% - 1px), -50%); }
+  20%, 80% { transform: translate(calc(-50% + 2px), -50%); }
+  30%, 50%, 70% { transform: translate(calc(-50% - 4px), -50%); }
+  40%, 60% { transform: translate(calc(-50% + 4px), -50%); }
+}
 
 /* Modal */
 .modal {
@@ -177,7 +387,7 @@ body { display: flex; flex-direction: column; }
 }
 .modal.show { display: flex; }
 .modal-card {
-  background: #0a0d18;
+  background: #050308;
   border: 1px solid var(--line);
   border-radius: 13px;
   width: min(100%, 610px);            /* φ × 377 ≈ 610, both Fibonacci */
