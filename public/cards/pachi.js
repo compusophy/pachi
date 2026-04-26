@@ -75,33 +75,11 @@ const TIER_BG_ALPHA  = [0x05, 0x0d, 0x14, 0x21, 0x34, 0x55, 0x89];
 // Per-tier hot-tint amplification — high-tier slots respond more dramatically
 // when struck, low-tier slots are quietly absorbed.
 const TIER_HOT_BOOST = [0.8, 1.0, 1.2, 1.5, 1.9, 2.3, 3.0];
-// Label color per tier — always readable. The slot BG already encodes
-// value (TIER_GOLD scale), so labels just need to legibly say the
-// number. Earlier the label used TIER_GOLD[tier] which made tier-0
-// labels invisible (dim amber on near-black bg). These are
-// brightness-scaled but never below a comfortable read.
-const TIER_LABEL = [
-  "#c89e4c",  // tier 0 — readable warm amber
-  "#d4a854",
-  "#dcb45f",
-  "#e8c069",
-  "#f3cd76",
-  "#ffe066",
-  "#fff4b8",  // jackpot — near-cream
-];
 
 const popcount12 = (x) => {
   let c = 0;
   for (let i = 0; i < 12; i++) if ((x >> i) & 1) c++;
   return c;
-};
-
-const fmtMult = (bps) => {
-  const m = bps / 10000;
-  if (m >= 100) return Math.round(m) + "×";
-  if (m >= 10)  return m.toFixed(0) + "×";
-  if (m >= 1)   return m.toFixed(1) + "×";
-  return m.toFixed(1) + "×";
 };
 
 // Integer balls only — display floor(raw / 1e6). Fractional contract
@@ -192,30 +170,35 @@ export function mount(slot, ctx) {
 
     dpr = Math.min(2, window.devicePixelRatio || 1);
     const cssW = board.clientWidth;
-    const cssH = board.clientHeight;
-    if (cssW < 8 || cssH < 8) return;
-    W = cssW; H = cssH;
-    canvas.width  = Math.floor(cssW * dpr);
-    canvas.height = Math.floor(cssH * dpr);
-    canvas.style.width  = cssW + "px";
-    canvas.style.height = cssH + "px";
-    cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    if (cssW < 8) return;
+
+    // Width is the only externally-driven dimension. Heights are derived
+    // from the natural pyramid layout (slotWidth × row count + slot row),
+    // then applied back to the board element so the canvas has zero dead
+    // space below the slots. Earlier the board used a fixed aspect-ratio
+    // which left ~80px of empty canvas under the slot row on phones,
+    // pushing the catch tray and controls into a "weird gap" zone.
+    W = cssW;
 
     const usableW = W - 24;
     slotWidth = usableW / SLOTS;
     pegR  = Math.max(2.5, slotWidth * 0.13);
     ballR = Math.max(4, pegR * PHI);  // golden ratio: ball is φ× the peg radius
-    // Slot catch container = golden PORTRAIT per box (taller than wide).
-    // height = width * φ.
     slotsH = Math.max(36, slotWidth * PHI);
-    // Spawn-zone height — gives balls room to be visible BEFORE they enter the
-    // peg field. Without this, balls spawn off-canvas and get clipped at the
-    // top edge.
     topY = 55;  // ≈ 2 × ballR + Fibonacci jitter band, well below canvas top
-    // Use remaining vertical space for peg field; subtract the new top zone
-    // and the slot region from the budget so spacing math accounts for both.
-    rowSpacing = Math.max(slotWidth * 0.78, (H - slotsH - topY - 26) / ROWS);
+    // rowSpacing is purely a function of slotWidth — no clientHeight
+    // dependency. The pyramid grows with the board; we size the canvas
+    // to fit, not the other way around.
+    rowSpacing = Math.max(slotWidth * 0.78, slotWidth * 0.82);
     slotsY = topY + ROWS * rowSpacing + 6;
+    // Natural canvas height = everything in one column with no slack.
+    H = slotsY + slotsH;
+    board.style.height = H + "px";
+    canvas.width  = Math.floor(W * dpr);
+    canvas.height = Math.floor(H * dpr);
+    canvas.style.width  = W + "px";
+    canvas.style.height = H + "px";
+    cx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     // Visual-only 2-peg row above the physics top row. Same color as
     // physics pegs at rest, slightly smaller so they read as part of the
@@ -313,74 +296,8 @@ export function mount(slot, ctx) {
       envelope: { attack: 0.005, decay: 0.55, sustain: 0.05, release: 0.55 },
       volume: -16,
     }).connect(absorbReverb);
-    // Ambient pad — a sparse, slow, generative voice that quietly weaves
-    // notes from G major + circle-of-fifths + φ-rotated phrasing. Sits
-    // far below the click/land/jackpot voices in volume so it never
-    // competes with gameplay feedback. Reverb with long tail gives the
-    // canon-fugue cathedral feel the brand asks for.
-    const padReverb = new Tone.Reverb({ decay: 8.0, wet: 0.55 }).connect(dest);
-    const pad = new Tone.PolySynth(Tone.Synth, {
-      oscillator: { type: "sine" },
-      envelope: { attack: 2.5, decay: 0.5, sustain: 0.5, release: 5.0 },
-      volume: -34,
-    }).connect(padReverb);
-    audio = { dest, click, land, jackpot, absorb, absorbReverb, pad, padReverb };
-    startAmbient();
+    audio = { dest, click, land, jackpot, absorb, absorbReverb };
     return audio;
-  }
-
-  // Ambient pad scheduler — fires occasional notes from a φ-rotated walk
-  // over the G major / D major (circle-of-fifths neighbour) note pool.
-  // Phrase intervals are Fibonacci seconds (3, 5, 8, 13) so cadence
-  // breathes. Pauses while the tab is hidden (visibility change handler
-  // calls ambientPause). Sparseness is deliberate — the user asked for
-  // "subtle, kinda random, always perfect."
-  // G major pentatonic + D major fifth-relations → all notes consonant
-  // against any drone, so the random walk never sounds wrong.
-  const PAD_NOTES = [
-    "G3", "A3", "B3", "D4",
-    "E4", "G4", "A4", "B4",
-    "D5", "G5",
-  ];
-  const PAD_INTERVALS = [3000, 5000, 5000, 8000, 8000, 13000];
-  let padIdx = 0;
-  let ambientTimer = null;
-  let ambientPaused = false;
-  function ambientStep() {
-    if (ambientPaused || !audio || !audio.pad) return;
-    // φ-stride (5 ≈ φ × 3 mod 10) so the walk doesn't repeat consecutively.
-    padIdx = (padIdx + 5) % PAD_NOTES.length;
-    const note = PAD_NOTES[padIdx];
-    // Occasional dyad — a fifth above the chosen note for the canon feel.
-    // ~1 in φ² (≈38%) of strikes get the harmony partner.
-    const harmonize = Math.random() < 0.38;
-    try {
-      audio.pad.triggerAttackRelease(note, 4.5);
-      if (harmonize) {
-        const partnerIdx = (padIdx + 4) % PAD_NOTES.length;
-        audio.pad.triggerAttackRelease(PAD_NOTES[partnerIdx], 4.0);
-      }
-    } catch {}
-    const next = PAD_INTERVALS[Math.floor(Math.random() * PAD_INTERVALS.length)];
-    ambientTimer = setTimeout(ambientStep, next);
-  }
-  function startAmbient() {
-    if (ambientTimer) return;
-    ambientPaused = false;
-    // First note after a quiet moment so the pad fades in rather than
-    // greeting the user immediately on first DROP.
-    ambientTimer = setTimeout(ambientStep, 3000);
-  }
-  function ambientPause() {
-    ambientPaused = true;
-    if (ambientTimer) { clearTimeout(ambientTimer); ambientTimer = null; }
-  }
-  function ambientResume() {
-    if (!audio) return;
-    if (ambientPaused) {
-      ambientPaused = false;
-      ambientTimer = setTimeout(ambientStep, 1500);
-    }
   }
 
   // φ-rotated arpeggio over G major triad (G3 B3 D4 G4). Each call advances
@@ -448,43 +365,10 @@ export function mount(slot, ctx) {
       }
     }
 
-    // slot dividers — gold-tinted to read as the same plumbing language
-    // as the catch box below. The dividers extend through the full slot
-    // height and visually continue down to the canvas bottom edge so
-    // they butt flush against the catch tray (which sits with no gap).
-    cx.strokeStyle = "rgba(255, 214, 10, 0.13)";
-    cx.lineWidth = 1;
-    const dividerEndY = Math.max(slotsY + slotsH, H);
-    for (let s = 0; s <= SLOTS; s++) {
-      const x = W / 2 + (s - SLOTS / 2) * slotWidth;
-      cx.beginPath(); cx.moveTo(x + 0.5, slotsY); cx.lineTo(x + 0.5, dividerEndY); cx.stroke();
-    }
-    // Slot floor / rim — a faint gold line at the bottom of the slot
-    // row, the lip where balls "settle" before being lifted to the apex.
-    cx.strokeStyle = "rgba(255, 214, 10, 0.34)";
-    cx.lineWidth = 1;
-    cx.beginPath();
-    cx.moveTo(0, slotsY + slotsH + 0.5);
-    cx.lineTo(W, slotsY + slotsH + 0.5);
-    cx.stroke();
-
-    // slot multiplier labels — sized for readability (much bigger than
-    // before; was barely-legible on phones). Label color uses the bright
-    // TIER_LABEL scale so the digit reads cleanly off the slot bg even
-    // at tier 0; value-encoding lives in the bg alpha + glow.
-    const labelSize = Math.min(slotsH * 0.55, slotWidth * 0.62);
-    cx.font = `700 ${Math.floor(labelSize)}px 'IBM Plex Mono', ui-monospace, monospace`;
-    cx.textAlign = "center"; cx.textBaseline = "middle";
-    for (let s = 0; s < SLOTS; s++) {
-      const b = slotBounds[s];
-      const tier = SLOT_TIERS[s];
-      cx.fillStyle = TIER_LABEL[tier];
-      // Glow blur scales 0 → 13 with tier; matches Fibonacci progression.
-      cx.shadowColor = TIER_GOLD[tier];
-      cx.shadowBlur  = tier * 1.8;
-      cx.fillText(fmtMult(MULTS[s]), b.mid, slotsY + slotsH * 0.5);
-    }
-    cx.shadowBlur = 0; cx.shadowColor = "transparent";
+    // No slot dividers, no labels — color tier alone defines the slot's
+    // value. The bg fill alpha + always-on shimmer (tier 5+) + hot tint
+    // on impact carry the semantics. Numbers were noisy and the vertical
+    // dividers competed with the slot fills.
 
     // pegs — single gold flash. Lightness ramps with heat by 1/φ steps so the
     // bright phase matches the golden visual language without inventing new hues
@@ -710,11 +594,14 @@ export function mount(slot, ctx) {
     // neighbouring slot, snap it onto the contract-determined slot before
     // any visual feedback fires. Otherwise an 85× slot can light up while
     // the contract pays the 0.1× sink, which reads as cheating.
+    // Velocity zeroed so the ball visibly STOPS in the slot before the
+    // multiplier flux balls drop down — sells the "absorbed by the slot"
+    // feeling per user feedback.
     const slot = ball.expectedSlot;
     const sb = slotBounds[slot];
     if (sb) {
       Matter.Body.setPosition(ball, { x: sb.mid, y: ball.position.y });
-      Matter.Body.setVelocity(ball, { x: 0, y: ball.velocity.y * 0.5 });
+      Matter.Body.setVelocity(ball, { x: 0, y: 0 });
     }
     const bps = ball.expectedMultBps;
     runningTotalBps += bps;
@@ -776,12 +663,16 @@ export function mount(slot, ctx) {
     const residual  = totalRaw - perRaw * BigInt(multCount);
     emitBallsFromSlot(sb, multCount, perRaw, residual);
 
-    // remove physics ball after a beat
+    // Remove the physics ball quickly — it's done its job, the multiplier
+    // flux balls take over from here. 90ms is short enough that the
+    // matter ball vanishes just as the first dropped multiplier ball
+    // appears, so the visual handoff reads as the matter ball "becoming"
+    // the multiplied set.
     setTimeout(() => {
       Matter.World.remove(engine.world, ball);
       const i = balls.indexOf(ball); if (i >= 0) balls.splice(i, 1);
       maybeFinishRound();
-    }, 220);
+    }, 90);
   }
 
   // Continuous slot → catch → apex flow. Each emitted ball flies a short
@@ -802,60 +693,83 @@ export function mount(slot, ctx) {
     const catchCx = catch_r.left + catch_r.width / 2;
     const catchCy = catch_r.top  + catch_r.height * 0.55;
 
+    // Three-stage choreography per emitted unit, synchronized:
+    //   1. DROP — straight gravity drop slot → catch (no horizontal bow)
+    //   2. HOLD — static at catch (visible accumulation while siblings finish)
+    //   3. RISE — collective up-flight catch → wallet, all balls together
+    // Earlier each ball did its own slot→catch→wallet trip so the catch
+    // never "filled" — balls left as fast as they arrived. The collective
+    // hold gives the user a beat to register the multiplied payout
+    // physically pooled in the tray before it lifts to the wallet.
+    const DROP_DURATION   = 380;
+    const PER_BALL_LAUNCH = 50;
+    const COLLECTIVE_HOLD = 520;
+    const lastDropArrives = (count - 1) * PER_BALL_LAUNCH + DROP_DURATION;
+    const upLaunchAt      = lastDropArrives + COLLECTIVE_HOLD;
+
     for (let i = 0; i < count; i++) {
       roundFluxRemaining++;
-      // Slight per-ball offset so siblings don't overlap on the journey.
-      const jitterX = (Math.random() - 0.5) * Math.min(catch_r.width * 0.55, 144);
-      const jitterY = (Math.random() - 0.5) * 13;
-      const catchX  = catchCx + jitterX;
-      const catchY  = catchCy + jitterY;
-      // Stagger the multiplication wave: the original physics ball "lands"
-      // first, the multiplier ghosts ripple out behind it (50ms gap).
-      const launchAt = i * 50;
+      // Spread balls horizontally so siblings stack visibly inside the
+      // tray instead of all stacking on the same x.
+      const spread = count > 1
+        ? ((i - (count - 1) / 2) / (count - 1)) * Math.min(catch_r.width * 0.5, 144)
+        : 0;
+      const catchX  = catchCx + spread;
+      const catchY  = catchCy + (Math.random() - 0.5) * 8;
+      const dropAt  = i * PER_BALL_LAUNCH;
+      const myDropArrival = dropAt + DROP_DURATION;
+      const myHoldDuration = Math.max(60, upLaunchAt - myDropArrival);
+
       setTimeout(() => {
-        // Stage 1: slot → catch (downward, gentle bow)
+        // Stage 1: straight DROP into catch — arc:0 means no bow, pure
+        // vertical fall. easeOutCubic in flux gives the gravity feel.
         ctx.flux.flyBall({
           fromX: slotMidX, fromY: slotMidY,
           toX:   catchX,   toY:   catchY,
-          duration: 380 + Math.random() * 80,
+          duration: DROP_DURATION,
+          arc: 0,
           radius: Math.max(8, ballR),
           onArrive: () => {
-            // Stage 2: hold at catch briefly, then fly up to apex.
-            // Hold duration has a small spread so balls don't all fly out
-            // of the catch in lockstep — the catch reads as alive.
-            const holdMs = 420 + Math.random() * 240;
-            setTimeout(() => {
-              const wallet = ctx.walletAnchor && ctx.walletAnchor();
-              if (!wallet) {                // apex got removed mid-flight (HMR/cleanup)
-                roundFluxRemaining = Math.max(0, roundFluxRemaining - 1);
-                maybeFinishRound();
-                return;
-              }
-              const dy = wallet.y - catchY;
-              ctx.flux.flyBall({
-                fromX: catchX, fromY: catchY,
-                toX: wallet.x, toY: wallet.y,
-                duration: 720 + Math.random() * 180,
-                arc: -Math.abs(dy) * 0.42,    // bow up
-                radius: Math.max(8, ballR),
-                onArrive: () => {
-                  // Wallet absorbs the value. Last ball of this slot
-                  // landing gets the rounding residual so totals are
-                  // exact at the round boundary.
-                  if (ctx.optimisticAdd) {
-                    const tip = (i === count - 1) ? residual : 0n;
-                    ctx.optimisticAdd(perRaw + tip);
-                  }
-                  if (ctx.pulseWallet) ctx.pulseWallet();
-                  playAbsorb();
+            // Stage 2: STATIC hold at catch — same coords on both ends
+            // so the ball renders in place for myHoldDuration ms. As
+            // siblings keep arriving, the tray visibly fills.
+            ctx.flux.flyBall({
+              fromX: catchX, fromY: catchY,
+              toX:   catchX, toY:   catchY,
+              duration: myHoldDuration,
+              arc: 0,
+              radius: Math.max(8, ballR),
+              onArrive: () => {
+                // Stage 3: collective RISE to wallet apex.
+                const wallet = ctx.walletAnchor && ctx.walletAnchor();
+                if (!wallet) {
                   roundFluxRemaining = Math.max(0, roundFluxRemaining - 1);
                   maybeFinishRound();
-                },
-              });
-            }, holdMs);
+                  return;
+                }
+                const dy = wallet.y - catchY;
+                ctx.flux.flyBall({
+                  fromX: catchX, fromY: catchY,
+                  toX: wallet.x, toY: wallet.y,
+                  duration: 720 + Math.random() * 120,
+                  arc: -Math.abs(dy) * 0.42,
+                  radius: Math.max(8, ballR),
+                  onArrive: () => {
+                    if (ctx.optimisticAdd) {
+                      const tip = (i === count - 1) ? residual : 0n;
+                      ctx.optimisticAdd(perRaw + tip);
+                    }
+                    if (ctx.pulseWallet) ctx.pulseWallet();
+                    playAbsorb();
+                    roundFluxRemaining = Math.max(0, roundFluxRemaining - 1);
+                    maybeFinishRound();
+                  },
+                });
+              },
+            });
           },
         });
-      }, launchAt);
+      }, dropAt);
     }
   }
 
@@ -1197,14 +1111,10 @@ export function mount(slot, ctx) {
     if (reason) console.warn("forceResetRound:", reason);
   }
   function onVisibilityChange() {
-    if (document.visibilityState !== "visible") {
-      ambientPause();
-      return;
-    }
+    if (document.visibilityState !== "visible") return;
     if (Tone.context && Tone.context.state === "suspended") {
       Tone.context.resume().catch(() => {});
     }
-    ambientResume();
     // Mobile / Farcaster mini-app: backgrounding can clear the canvas
     // backing store AND fail to auto-resume rAF. Rebuild + re-kick the
     // loops; the renderQueued/tickQueued flags ensure we don't end up
@@ -1225,7 +1135,6 @@ export function mount(slot, ctx) {
 
   return () => {
     mounted = false;
-    ambientPause();
     ro.disconnect();
     document.removeEventListener("visibilitychange", onVisibilityChange);
     Matter.Engine.clear(engine);
@@ -1235,8 +1144,7 @@ export function mount(slot, ctx) {
         audio.land.dispose();
         audio.jackpot.dispose();
         audio.absorb?.dispose();
-        audio.pad?.dispose();
-        audio.padReverb?.dispose();
+        audio.absorbReverb?.dispose();
         audio.dest.dispose();
       } catch {}
     }
@@ -1261,13 +1169,14 @@ const PACHI_CSS = `
    into the top of the pyramid) keeps the column tight. */
 .pachi-root {
   position: absolute; inset: 0;
-  display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
-  /* Side gutters match chrome's 21px so the pyramid edge aligns with the
-     PACHI wordmark and the cog icon. Earlier 13px left the pyramid
-     sticking out past those visual anchors. env(safe-area-inset-*) is
-     intentionally NOT used — it inflates badly inside Farcaster mini-app. */
+  display: flex; flex-direction: column; align-items: center;
+  /* Center the whole stack so leftover viewport space distributes evenly
+     above the apex and below the DROP. On tall phones this kills the
+     "tons of space below the catch" gap that flex-start + margin-top:auto
+     was producing. Side gutters match chrome's 21px (PACHI / cog align). */
+  justify-content: center;
   padding: 55px 21px 21px;
-  gap: 0;     /* no gap — pyramid + slot row + catch box flow as one column */
+  gap: 0;     /* pyramid + slot row + catch flow as one column */
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
   color: #fff;
   background: #000;
@@ -1306,45 +1215,33 @@ const PACHI_CSS = `
 .pachi-board {
   position: relative;
   margin: 0 auto;
-  /* Pyramid fills the column edge-to-edge (minus the 13px side gutter
-     on the parent). The earlier calc-based height cap was insetting the
-     pyramid by ~80px on phones, leaving wide margins and a small board.
-     Now: width = 100% of available column, capped at 610 on big screens,
-     and aspect-ratio gives us the height. The bottom controls use
-     margin-top:auto and will compress if vertical space is tight. */
+  /* Width-driven, height computed in JS (buildBoard sets style.height to
+     the natural pyramid height = topY + ROWS×rowSpacing + slotsH).
+     No aspect-ratio constraint → no dead space below the slot row.
+     Container width capped at 610 on tablet/desktop. */
   width: min(100%, 610px);
-  aspect-ratio: 1 / 1.236;
-  overflow: visible;     /* let pegs/balls breathe slightly past the edge */
-  /* No border, no rounding, no inner shadow — pyramid sits flush on the
-     page. Earlier the inset 1px stroke + border-radius read as a visible
-     panel which made the canvas look like a separate surface. */
+  overflow: visible;     /* pegs/balls can breathe past the edge */
 }
 .pachi-board canvas { display: block; }
 
-/* Catch box — sits flush under the slot row of the pyramid, no gap, no
-   side-rounding on the top edge. Reads as the same plumbing system: the
-   slots feed straight into the catch tray. Height 89 (Fibonacci) is
-   smaller than the old 144 so the tray doesn't dominate vertically.
-   The top edge has only a hairline gold so the slot dividers visually
-   continue down into the digit area. */
+/* Catch box — sits flush under the slot row, no gap, no top rounding.
+   Quiet gold gradient so it reads as a continuation of the slot fills
+   below the pyramid, not a panel of its own. Height 89 is the Fibonacci
+   step; comfortable for the digit cap-height with golden-ratio
+   breathing room. */
 .pachi-totalwrap {
   position: relative;
   width: min(100%, 610px);
   height: 89px;
   display: flex; align-items: center; justify-content: center;
   z-index: 5;
-  border: 1px solid rgba(255, 214, 10, 0.34);
-  border-top: 1px solid rgba(255, 214, 10, 0.62);
   border-radius: 0 0 13px 13px;
   background: linear-gradient(
     to bottom,
-    rgba(255, 214, 10, 0.06) 0%,
+    rgba(255, 214, 10, 0.05) 0%,
     rgba(255, 214, 10, 0.02) 38%,
     rgba(255, 214, 10, 0.0)  100%
   );
-  box-shadow:
-    inset 0 13px 34px -21px rgba(255, 214, 10, 0.21),
-    0 0 13px rgba(255, 214, 10, 0.08);
 }
 .pachi-total {
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
@@ -1367,7 +1264,10 @@ const PACHI_CSS = `
 
 .pachi-controls {
   display: flex; flex-direction: column; align-items: center; gap: 13px;
-  margin-top: auto;          /* push to bottom edge of card */
+  /* Fixed gap above the pill bar — earlier the catch tray was butting
+     directly into the pills with no breathing room. 34px (Fibonacci)
+     gives the catch a clear visual end before the action area starts. */
+  margin-top: 34px;
 }
 /* Pill bar — same width as DROP (233 / Fibonacci), each pill claims 1/3
    via flex:1. Background neutral so the bar itself doesn't compete with
