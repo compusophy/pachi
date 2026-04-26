@@ -126,12 +126,34 @@ export function mount(slot, ctx) {
   style.textContent = PACHI_CSS;
   slot.appendChild(style);
 
-  const canvas  = slot.querySelector("#pcanvas");
-  const btnEl   = slot.querySelector("#pbtn");
-  const totalEl = slot.querySelector("#ptotal");
-  const board   = slot.querySelector("#pboard");
-  const pills   = [...slot.querySelectorAll(".pachi-pill")];
-  const cx      = canvas.getContext("2d");
+  const canvas    = slot.querySelector("#pcanvas");
+  const btnEl     = slot.querySelector("#pbtn");
+  const totalEl   = slot.querySelector("#ptotal");
+  const totalWrap = slot.querySelector("#ptotalwrap");
+  const board     = slot.querySelector("#pboard");
+  const pills     = [...slot.querySelectorAll(".pachi-pill")];
+  const cx        = canvas.getContext("2d");
+
+  // Portal the digit out of the stage and onto body. The flux overlay
+  // is a fixed-position canvas at z-index:300 attached to body — anything
+  // inside the stage (z:0 in body's stacking context) is stuck below it.
+  // Portaling the digit gives it z-index:400 in body's context so flux
+  // balls that pile in the catch tray render UNDER the running total
+  // instead of obscuring it.
+  document.body.appendChild(totalEl);
+  totalEl.classList.add("pachi-total-overlay");
+  function positionTotalDigit() {
+    if (!totalWrap || !totalEl) return;
+    const r = totalWrap.getBoundingClientRect();
+    if (r.width === 0 && r.height === 0) return;
+    totalEl.style.left = (r.left + r.width / 2) + "px";
+    totalEl.style.top  = (r.top  + r.height / 2) + "px";
+  }
+  // Reposition on layout shifts (resize / scroll / orientation).
+  const totalRO = new ResizeObserver(positionTotalDigit);
+  totalRO.observe(totalWrap);
+  window.addEventListener("resize", positionTotalDigit, { passive: true });
+  window.addEventListener("scroll", positionTotalDigit, { passive: true });
 
   // ── ball-count selector ─────────────────────────────────────────────────
   let selectedN = 1;
@@ -199,6 +221,11 @@ export function mount(slot, ctx) {
     canvas.style.width  = W + "px";
     canvas.style.height = H + "px";
     cx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // Canvas height change shifts the catch tray vertically — reposition
+    // the portaled digit to track. ResizeObserver only fires on size
+    // changes (catch tray height stays 89), so this explicit call is
+    // needed when *position* changes due to upstream layout shifts.
+    positionTotalDigit();
 
     // Visual-only 2-peg row above the physics top row. Same color as
     // physics pegs at rest, slightly smaller so they read as part of the
@@ -647,21 +674,20 @@ export function mount(slot, ctx) {
     }
 
     // Multiply at slot — emit M flux balls from the slot's center, each
-    // flying slot → catch box → apex. The multiplication IS the visual
-    // payoff: a ball lands in a 11× slot and ten more ball glyphs ripple
-    // out from the same spot. Capped at PER_LANDING_MAX to keep total
-    // in-flight count manageable on 100-ball jackpot rounds.
-    const m_x = bps / 10_000;                // multiplier as float
-    const PER_LANDING_MAX = 8;
-    const multCount = Math.min(PER_LANDING_MAX, Math.max(1, Math.round(m_x)));
+    // flying slot → catch box → apex. M tracks the contract's INTEGER
+    // ball return (floor of stake × multiplier). When the slot is the
+    // sink (0.1086×) or 0.5× and stake = 1 ball, M = 0 and NO flux
+    // balls emit — the user sees the catch tray stay at 0 instead of a
+    // false-positive ball flying back to the wallet. Dust still
+    // reconciles via refreshBalance() at finishRound.
     const stakeRaw   = stakePerBallRaw > 0n ? stakePerBallRaw : 1_000_000n;
-    // Total raw value this physics ball is worth = stake × M, distributed
-    // evenly across the multCount visible balls. Fractional residual goes
-    // on the last emitted ball so totals reconcile exactly.
-    const totalRaw  = (stakeRaw * BigInt(bps)) / 10_000n;
-    const perRaw    = multCount > 0 ? totalRaw / BigInt(multCount) : 0n;
-    const residual  = totalRaw - perRaw * BigInt(multCount);
-    emitBallsFromSlot(sb, multCount, perRaw, residual);
+    const totalRaw   = (stakeRaw * BigInt(bps)) / 10_000n;
+    const totalBalls = Number(totalRaw / 1_000_000n);   // floor — what the player sees
+    const PER_LANDING_MAX = 8;
+    const multCount  = Math.min(PER_LANDING_MAX, totalBalls);
+    const perRaw     = multCount > 0 ? totalRaw / BigInt(multCount) : 0n;
+    const residual   = totalRaw - perRaw * BigInt(multCount);
+    if (multCount > 0) emitBallsFromSlot(sb, multCount, perRaw, residual);
 
     // Remove the physics ball quickly — it's done its job, the multiplier
     // flux balls take over from here. 90ms is short enough that the
@@ -981,15 +1007,28 @@ export function mount(slot, ctx) {
     const n = selectedN;
     runningStakeRaw = stakePerBallRaw * BigInt(n);
 
-    // Instant deduction: the displayed wallet balance drops immediately,
-    // before any tx is sent. Final truth is reconciled by ctx.refreshBalance()
-    // when the round resolves (or on error). Without this the wallet only
-    // updated AFTER the round ended, which made big-wager DROPs feel like
-    // they were free.
-    if (ctx.optimisticDeduct) ctx.optimisticDeduct(runningStakeRaw);
-
     try {
       await withTimeout(ensureApproval(), 45_000, "approve");
+
+      // Pre-flight simulate — catches BankrollTooLow / BallsOutOfRange /
+      // insufficient-balance reverts BEFORE we deduct optimistically and
+      // burn nonces on a tx that just reverts. simulateContract runs the
+      // call as eth_call which throws with the contract's custom error
+      // name in shortMessage. Cheap (one RPC), high payoff (clean error
+      // messages instead of generic "transaction reverted on chain").
+      await withTimeout(
+        ctx.client.simulateContract({
+          address: PACHI_ADDR, abi: PACHI_ABI, functionName: "play",
+          args: [BigInt(n)], account: ctx.account,
+        }),
+        8_000, "simulate"
+      );
+
+      // Simulate passed → safe to deduct. Only debit the displayed
+      // balance once we know the tx will land; before this point a
+      // reverted DROP would falsely tick the wallet down.
+      if (ctx.optimisticDeduct) ctx.optimisticDeduct(runningStakeRaw);
+
       const hash = await withTimeout(
         writeWithRetry({
           address: PACHI_ADDR, abi: PACHI_ABI, functionName: "play", args: [BigInt(n)],
@@ -1064,11 +1103,33 @@ export function mount(slot, ctx) {
     } catch (err) {
       console.error(err);
       const raw = err.shortMessage || err.message || "drop failed";
-      const looksLikeRevert = /revert/i.test(raw);
-      // Distinct error toast — the gentle 2.4s neutral toast was getting
-      // missed entirely. Reverts get a longer hold + the .error variant
-      // (red border, shake) so the user can't NOT see them.
-      ctx.toast(looksLikeRevert ? "transaction reverted" : raw, looksLikeRevert ? 5200 : 3400, { severity: "error" });
+      // Decode the contract's custom error name from viem's error shape
+      // and surface a player-friendly message instead of "transaction
+      // reverted on chain". metaMessages / cause / details may also
+      // carry the error name on different viem versions, so we scan
+      // everything we can reach.
+      const blob = [
+        raw,
+        err.metaMessages?.join(" ") || "",
+        err.cause?.shortMessage || "",
+        err.cause?.message || "",
+        err.details || "",
+      ].join(" ");
+      let userMsg;
+      if (/BankrollTooLow/i.test(blob)) {
+        userMsg = `bankroll too low for ×${selectedN} — try fewer balls`;
+      } else if (/BallsOutOfRange/i.test(blob)) {
+        userMsg = "ball count must be 1–100";
+      } else if (/transferFrom|insufficient (balance|allowance)|ERC20InsufficientBalance/i.test(blob)) {
+        userMsg = "not enough PachiUSD for this stake";
+      } else if (/revert/i.test(blob)) {
+        userMsg = "transaction reverted";
+      } else if (/timed out/i.test(blob)) {
+        userMsg = "rpc timed out — try again";
+      } else {
+        userMsg = raw;
+      }
+      ctx.toast(userMsg, 5200, { severity: "error" });
       // Reverse the optimistic deduction by re-syncing with chain truth.
       // AWAIT this so playInFlight stays held until the displayed balance
       // is back in sync — otherwise a rapid second click after an error
@@ -1092,6 +1153,7 @@ export function mount(slot, ctx) {
     buildBoard();
     scheduleRender();
     scheduleTick();
+    positionTotalDigit();
   });
 
   const ro = new ResizeObserver(() => {
@@ -1142,6 +1204,12 @@ export function mount(slot, ctx) {
   return () => {
     mounted = false;
     ro.disconnect();
+    totalRO.disconnect();
+    window.removeEventListener("resize", positionTotalDigit);
+    window.removeEventListener("scroll", positionTotalDigit);
+    if (totalEl && totalEl.parentNode === document.body) {
+      document.body.removeChild(totalEl);
+    }
     document.removeEventListener("visibilitychange", onVisibilityChange);
     Matter.Engine.clear(engine);
     if (audio) {
@@ -1230,24 +1298,23 @@ const PACHI_CSS = `
 }
 .pachi-board canvas { display: block; }
 
-/* Catch box — sits flush under the slot row, no gap, no top rounding.
-   Quiet gold gradient so it reads as a continuation of the slot fills
-   below the pyramid, not a panel of its own. Height 89 is the Fibonacci
-   step; comfortable for the digit cap-height with golden-ratio
-   breathing room. */
+/* Catch tray — fully transparent, no border, no gradient. Flat black
+   page bg shows through. The digit hovers over whatever flux balls are
+   piling in the tray. (User: no decorative gradients in the design
+   system — the catch is just the visible bottom-of-stack space where
+   balls accumulate before lifting to the apex.) */
 .pachi-totalwrap {
   position: relative;
   width: min(100%, 610px);
   height: 89px;
   display: flex; align-items: center; justify-content: center;
+  background: transparent;
+  /* Digit needs to sit ABOVE the flux overlay (which is z-index:300
+     on document.body so flux balls render OVER chrome). Anything we
+     put above 300 here will rise above the flux canvas as long as we
+     also create a stacking context (transform/opacity does it
+     implicitly; an explicit z-index needs position too). */
   z-index: 5;
-  border-radius: 0 0 13px 13px;
-  background: linear-gradient(
-    to bottom,
-    rgba(255, 214, 10, 0.05) 0%,
-    rgba(255, 214, 10, 0.02) 38%,
-    rgba(255, 214, 10, 0.0)  100%
-  );
 }
 .pachi-total {
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
@@ -1258,8 +1325,15 @@ const PACHI_CSS = `
   transition: color 0.21s ease, text-shadow 0.21s ease, opacity 0.21s ease;
   color: #fff;
   opacity: 0;            /* revealed on first ball arriving in the catch */
-  position: relative;
-  z-index: 2;
+}
+/* When portaled to body, position-fixed at the catch tray's center so
+   it stacks above the flux overlay (z:300). 400 > 300 wins. */
+.pachi-total-overlay {
+  position: fixed;
+  z-index: 400;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  white-space: nowrap;
 }
 .pachi-total.shown { opacity: 1; }
 .pachi-total.flash { color: #ffeb47; }
