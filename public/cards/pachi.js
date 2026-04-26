@@ -335,23 +335,42 @@ export function mount(slot, ctx) {
       volume: -8,
     }).connect(dropReverb);
     audio = { dest, click, land, jackpot, absorb, absorbReverb, dropSyn, dropReverb };
+    // Re-apply current mute state once audio is initialised — the
+    // shell may have flipped the toggle while audio was lazy.
+    applySoundMute();
     return audio;
   }
+
+  // Mute / unmute everything by setting Tone.Destination.mute. Shell
+  // dispatches "pachi:soundtoggle" with detail.muted whenever the user
+  // toggles the cog-menu option; we apply it live (no reload). Initial
+  // state is read from window.PACHI_SOUND_MUTED which shell sets at
+  // page load from localStorage.
+  function applySoundMute() {
+    if (typeof Tone === "undefined" || !Tone.Destination) return;
+    Tone.Destination.mute = !!window.PACHI_SOUND_MUTED;
+  }
+  function onSoundToggle() { applySoundMute(); }
+  window.addEventListener("pachi:soundtoggle", onSoundToggle);
 
   // Fire the DROP chord. Cheap (3 voices, short envelope), idempotent
   // if audio not ready (silently no-ops). Called from the click handler
   // BEFORE the ball-flux flight starts so the tap feels immediately
   // acknowledged — earlier the first sound was a peg click ~600ms in.
+  // Octave scales with selectedN so heavier wagers ping HIGHER:
+  //   ×1   → G3 B3 D4   (low, modest)
+  //   ×10  → G4 B4 D5   (mid)
+  //   ×100 → G5 B5 D6   (bright, exciting)
+  // Stronger dopamine hit on the bigger commits without changing the
+  // chord identity (still G major triad, ascending).
   function playDropChord() {
     if (!audio || !audio.dropSyn) return;
     try {
       const t = Tone.now();
-      // Quick ascending arpeggio — G4 → B4 → D5, each 30ms apart, all
-      // sustained ~250ms. Reads as one chord but with motion: the
-      // listener's ear feels "things just started moving up".
-      audio.dropSyn.triggerAttackRelease("G4",  0.25, t);
-      audio.dropSyn.triggerAttackRelease("B4",  0.25, t + 0.03);
-      audio.dropSyn.triggerAttackRelease("D5",  0.25, t + 0.06);
+      const oct = selectedN === 100 ? 5 : selectedN === 10 ? 4 : 3;
+      audio.dropSyn.triggerAttackRelease(`G${oct}`,     0.25, t);
+      audio.dropSyn.triggerAttackRelease(`B${oct}`,     0.25, t + 0.03);
+      audio.dropSyn.triggerAttackRelease(`D${oct + 1}`, 0.25, t + 0.06);
     } catch {}
   }
 
@@ -1317,6 +1336,7 @@ export function mount(slot, ctx) {
     totalRO.disconnect();
     window.removeEventListener("resize", positionTotalDigit);
     window.removeEventListener("scroll", positionTotalDigit);
+    window.removeEventListener("pachi:soundtoggle", onSoundToggle);
     if (totalEl && totalEl.parentNode === document.body) {
       document.body.removeChild(totalEl);
     }

@@ -489,9 +489,34 @@ cogCopyEl.addEventListener("click", async (e) => {
   }
 });
 
+// Sound mute — persisted across sessions. window.PACHI_SOUND_MUTED is
+// the live value the card reads in applySoundMute(); the toggle event
+// notifies the card so it can update Tone.Destination.mute without a
+// reload. localStorage stores the same flag so the preference sticks
+// across page loads.
+const SOUND_MUTE_KEY = "pachi:soundMute:v1";
+window.PACHI_SOUND_MUTED = localStorage.getItem(SOUND_MUTE_KEY) === "1";
+const cogSoundEl = document.getElementById("cogSound");
+function renderSoundLabel() {
+  if (cogSoundEl) cogSoundEl.textContent = window.PACHI_SOUND_MUTED ? "SOUND: OFF" : "SOUND: ON";
+}
+renderSoundLabel();
+
 cogMenuEl.addEventListener("click", (e) => {
   const action = e.target.closest("[data-action]")?.dataset?.action;
   if (!action) return;
+  if (action === "sound") {
+    // Toggle in place — keep the menu open so the user sees the label
+    // flip ON ↔ OFF, but eat the document-click that would close it.
+    e.stopPropagation();
+    window.PACHI_SOUND_MUTED = !window.PACHI_SOUND_MUTED;
+    localStorage.setItem(SOUND_MUTE_KEY, window.PACHI_SOUND_MUTED ? "1" : "0");
+    renderSoundLabel();
+    window.dispatchEvent(new CustomEvent("pachi:soundtoggle", {
+      detail: { muted: window.PACHI_SOUND_MUTED },
+    }));
+    return;
+  }
   setCogMenu(false);
   // IMPORT / EXPORT are scaffolded but intentionally inert — see comment
   // above. Replace these toasts with real flows when multi-wallet ships.
