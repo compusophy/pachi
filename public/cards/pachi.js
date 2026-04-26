@@ -724,9 +724,10 @@ export function mount(slot, ctx) {
     // a 100-ball jackpot round visibly piles balls on the EDGES (where
     // 85× lives) and a sink-heavy round piles them in the MIDDLE.
     const columnX = slotMidX;
-    // Catch Y near the bottom 70% — pool low like real plinko bins,
-    // leave the upper third for the digit readout to breathe.
-    const catchCy = catch_r.top + catch_r.height * 0.7;
+    // Catch Y in the LOWER φ-band of the tray (78% down). With the new
+    // taller tray (144 = 55 + 34 digit + 55), the digit center is at
+    // 50%; balls landing at 78% sit ~40px below the digit, well clear.
+    const catchCy = catch_r.top + catch_r.height * 0.78;
 
     const DROP_DURATION   = 420;
     const PER_BALL_LAUNCH = 60;
@@ -1375,28 +1376,26 @@ const PACHI_CSS = `
 }
 .pachi-board canvas { display: block; }
 
-/* Catch tray — fully transparent, no border, no gradient. Flat black
-   page bg shows through. The digit hovers over whatever flux balls are
-   piling in the tray. (User: no decorative gradients in the design
-   system — the catch is just the visible bottom-of-stack space where
-   balls accumulate before lifting to the apex.) */
+/* Catch tray — fully transparent, no border, no gradient. Height 144
+   (Fibonacci) gives golden-ratio breathing room around the 34px digit:
+   55px above + 34 digit + 55px below = 144 (each space ≈ φ × digit).
+   That space pushes the digit visually clear of the multiplier slot
+   row above (the user complained the digit was crowding into them)
+   and gives flux balls landing in the lower portion their own zone. */
 .pachi-totalwrap {
   position: relative;
   width: min(100%, 610px);
-  height: 89px;
+  height: 144px;
   display: flex; align-items: center; justify-content: center;
   background: transparent;
-  /* Digit needs to sit ABOVE the flux overlay (which is z-index:300
-     on document.body so flux balls render OVER chrome). Anything we
-     put above 300 here will rise above the flux canvas as long as we
-     also create a stacking context (transform/opacity does it
-     implicitly; an explicit z-index needs position too). */
   z-index: 5;
 }
 .pachi-total {
   font-family: 'IBM Plex Mono', ui-monospace, monospace;
   font-weight: 700;
-  font-size: 42px;
+  /* 34px digit (Fibonacci) — paired with 55px breathing in the tray
+     above and below per user request for golden-ratio spacing. */
+  font-size: 34px;
   line-height: 1; letter-spacing: -0.04em;
   font-feature-settings: "tnum" 1;
   transition: color 0.21s ease, text-shadow 0.21s ease, opacity 0.21s ease;
@@ -1440,7 +1439,9 @@ const PACHI_CSS = `
 .pachi-pill {
   flex: 1 1 0;
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  padding: 10px 0;
+  /* Fibonacci vertical padding (was 10) — every gap, padding, and
+     margin in the card uses a Fibonacci value. */
+  padding: 8px 0;
   border-radius: 999px;
   border: 1px solid transparent;
   background: transparent;
