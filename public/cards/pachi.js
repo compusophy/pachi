@@ -1208,48 +1208,48 @@ export function mount(slot, ctx) {
     try {
       await withTimeout(ensureApproval(), 45_000, "approve");
 
-      // Pre-flight simulate — catches BankrollTooLow / BallsOutOfRange /
+      // Pick gas budget early so we can pass it to simulateContract too —
+      // skipping viem's auto-estimateGas pass that would otherwise run
+      // the contract loop a second time. Per-tier budget worth ~3x
+      // expected use (eth_estimateGas reports n=1000 = ~3.14M; 6M
+      // gives comfortable headroom). Unused gas refunds, so over-
+      // budgeting costs nothing extra.
+      const gasBudget = n >= 1000 ? 6_000_000n
+                       : n >= 100 ? 3_000_000n
+                       :            2_500_000n;
+
+      // Pre-flight simulate. Catches BankrollTooLow / BallsOutOfRange /
       // insufficient-balance reverts BEFORE we deduct optimistically.
-      // Cheap (one eth_call), high payoff: clean error messages instead
-      // of "transaction reverted on chain".
+      // n=1000 simulation runs the full 1000-iteration loop on the RPC
+      // (~500ms server-side, more with browser RTT). 8s default timeout
+      // was killing every ×1000 attempt; per-tier scaling fixes it.
+      const simTimeout = n >= 1000 ? 45_000 : n >= 100 ? 15_000 : 8_000;
       await withTimeout(
         ctx.client.simulateContract({
           address: PACHI_ADDR, abi: PACHI_ABI, functionName: "play",
           args: [BigInt(n)], account: ctx.account,
+          gas: gasBudget,
         }),
-        8_000, "simulate"
+        simTimeout, "simulate"
       );
-
-      // Pick a GENEROUS explicit gas budget. Tempo's estimator
-      // chronically under-shoots on cold-storage hits (stats counters,
-      // first-time-player slots), so we override.
-      //
-      // Survey of last 8000 blocks of successful plays at v2:
-      //   n=1   gasUsed range  113k – 1.86M  (avg 502k)
-      //   n=10  gasUsed range  141k – 1.89M  (avg 360k)
-      //   n=100 gasUsed range  401k – 406k   (avg 402k)
-      //
-      // The play() loop does ~1-2k gas per ball + ~200-1500k cold-path
-      // overhead. n=1000 worst case ~3M gas. Per-tier budgets give
-      // sufficient headroom while keeping the per-ball fee reasonable
-      // — unused gas is refunded so over-budget costs nothing extra.
-      const gasBudget = n >= 1000 ? 6_000_000n
-                       : n >= 100 ? 3_000_000n
-                       : 2_500_000n;
 
       // Simulate passed → safe to deduct.
       if (ctx.optimisticDeduct) ctx.optimisticDeduct(runningStakeRaw);
 
+      // Same scaling rationale as simTimeout — viem may run its own
+      // estimateGas (also a full eth_call) before broadcasting.
+      const submitTimeout  = n >= 1000 ? 90_000  : 45_000;
+      const receiptTimeout = n >= 1000 ? 120_000 : 60_000;
       const hash = await withTimeout(
         writeWithRetry({
           address: PACHI_ADDR, abi: PACHI_ABI, functionName: "play", args: [BigInt(n)],
           gas: gasBudget,
         }),
-        45_000, "tx submit"
+        submitTimeout, "tx submit"
       );
       const receipt = await withTimeout(
         ctx.client.waitForTransactionReceipt({ hash }),
-        60_000, "receipt"
+        receiptTimeout, "receipt"
       );
       // Explicit revert check. Tx may "succeed" at the RPC level but
       // revert in execution. The receipt itself doesn't carry a reason —
@@ -1646,19 +1646,23 @@ const PACHI_CSS = `
 
 .pachi-controls {
   display: flex; flex-direction: column; align-items: center; gap: 13px;
+  /* Take the full available column so the pill bar inside can size
+     against a real width. Without this, .pachi-controls width =
+     max-content = max child, which collapses any % values inside. */
+  width: 100%;
   /* Fixed gap above the pill bar — earlier the catch tray was butting
      directly into the pills with no breathing room. 34px (Fibonacci)
      gives the catch a clear visual end before the action area starts. */
   margin-top: 34px;
 }
-/* Pill bar — full width (matches the pyramid + catch column). All
-   pills claim 1/4 via flex:1 so ×1, ×10, ×100, ×1000 are equal width
-   regardless of label length. The bar itself stays neutral so it
-   doesn't compete with the active pill. */
+/* Pill bar — full width matching the pyramid + catch column (capped
+   at 610px on desktop, same as the other elements). All four pills
+   share flex:1 so ×1, ×10, ×100, ×1000 are EQUAL width regardless of
+   label length. The bar stays neutral so it doesn't compete with the
+   active pill. */
 .pachi-pills {
   display: flex;
-  width: 100%;
-  max-width: 610px;
+  width: min(100%, 610px);
   gap: 5px;
   padding: 5px;
   background: rgba(255,255,255,0.03);
