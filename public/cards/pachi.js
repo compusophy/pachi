@@ -155,6 +155,26 @@ export function mount(slot, ctx) {
   window.addEventListener("resize", positionTotalDigit, { passive: true });
   window.addEventListener("scroll", positionTotalDigit, { passive: true });
 
+  // ── haptics ─────────────────────────────────────────────────────────────
+  // Centralized helper. Respects the SOUND OFF toggle (window.PACHI_SOUND_MUTED)
+  // since most users want a single "be quiet" switch that covers both
+  // audio and vibration. All patterns use pure Fibonacci ms values
+  // (3, 5, 8, 13, 21, 34, 55) so the felt rhythm matches the
+  // golden-ratio visual + audio language elsewhere in the card.
+  function hapt(pattern) {
+    if (window.PACHI_SOUND_MUTED) return;
+    if (!navigator.vibrate) return;
+    try { navigator.vibrate(pattern); } catch {}
+  }
+  function haptPill()   { hapt(3); }
+  function haptDrop() {
+    // DROP press intensifies with selectedN — same shape as the audio
+    // chord octave-scaling: ×1 modest, ×100 punchy.
+    if (selectedN === 100)     hapt([13, 8, 13, 8, 21]);
+    else if (selectedN === 10) hapt([8, 5, 8]);
+    else                       hapt(5);
+  }
+
   // ── ball-count selector ─────────────────────────────────────────────────
   let selectedN = 1;
   function setN(n) {
@@ -164,7 +184,9 @@ export function mount(slot, ctx) {
   pills.forEach(p => p.addEventListener("click", (e) => {
     e.stopPropagation();
     if (btnEl.disabled) return;
-    setN(Number(p.dataset.n));
+    const next = Number(p.dataset.n);
+    if (next !== selectedN) haptPill();    // tiny tick on actual tier change
+    setN(next);
     p.blur();
   }));
 
@@ -710,14 +732,17 @@ export function mount(slot, ctx) {
           ), 50);
       }
     }
-    if (navigator.vibrate && balls.length < 6) {
-      // Fibonacci-rhythm haptics — felt rhythm matches the golden-ratio visuals
+    if (balls.length < 6) {
+      // Fibonacci-rhythm haptics — felt rhythm matches the golden-ratio
+      // visuals. Routed through hapt() so the SOUND toggle controls
+      // haptics too. Skipped during big-burst rounds (>5 balls in
+      // flight) to avoid stacking vibrations into one long buzz.
       let pattern;
-      if      (bps >= 800_000) pattern = [21, 13, 21, 13, 34, 55];  // 80x jackpot
-      else if (bps >= 100_000) pattern = [13, 8, 13, 21];            // 10x big
-      else if (bps >=  11_000) pattern = [8, 5, 8];                  // 1.1x+ small
-      else                     pattern = 5;                          // bust
-      navigator.vibrate(pattern);
+      if      (bps >= 800_000) pattern = [21, 13, 21, 13, 34, 55];  // 85× jackpot
+      else if (bps >= 100_000) pattern = [13, 8, 13, 21];            // 11× big
+      else if (bps >=  11_000) pattern = [8, 5, 8];                  // 1.1×+ small
+      else                     pattern = 5;                          // bust / sub-1×
+      hapt(pattern);
     }
 
     // Multiply at slot — emit M flux balls from the slot's center, each
@@ -1043,10 +1068,11 @@ export function mount(slot, ctx) {
     // on iOS Safari after long backgrounding) doesn't block the round.
     try { await withTimeout(ensureAudio(), 2_000, "audio init"); }
     catch (err) { console.warn("ensureAudio skipped:", err); }
-    // Fire DROP chord immediately so the tap is acknowledged with sound
-    // BEFORE the ball flight begins. (Earlier the first audible sound
-    // was a peg click 600ms+ later.)
+    // Fire DROP chord + haptic immediately so the tap is acknowledged
+    // with sound + felt rhythm BEFORE the ball flight begins. (Earlier
+    // the first feedback was a peg click 600ms+ later.)
     playDropChord();
+    haptDrop();
 
     // reset round state immediately
     runningTotalBps = 0;
