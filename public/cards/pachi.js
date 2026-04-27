@@ -379,11 +379,91 @@ export function mount(slot, ctx) {
       envelope: { attack: 0.005, decay: 0.34, sustain: 0.05, release: 0.34 },
       volume: -8,
     }).connect(dropReverb);
-    audio = { dest, click, land, jackpot, absorb, absorbReverb, dropSyn, dropReverb };
+    // Ambient pluck pair — fugue-like discrete-step music. PluckSynth
+    // is Karplus-Strong: strikes a "string", short attack, decays
+    // mathematically. No swept pads, no held drones, no eerie
+    // continuous frequencies — every note is a discrete event, which
+    // matches the design system's "no gradients" rule.
+    //
+    // Two voices form a canon: ambHi leads in the mid octave panned
+    // slightly right; ambLo follows an octave lower panned slightly
+    // left. Note sequence (see ambStep) is a Beatty sequence over
+    // C major pentatonic — aperiodic, infinite, never dissonant. Note
+    // timings drawn from Fibonacci-spaced intervals.
+    const ambVerb = new Tone.Reverb({ decay: 3.4, wet: 0.34 }).connect(dest);
+    const panR = new Tone.Panner(0.21).connect(ambVerb);
+    const panL = new Tone.Panner(-0.21).connect(ambVerb);
+    const ambHi = new Tone.PluckSynth({
+      attackNoise: 0.55, dampening: 3400, resonance: 0.78, release: 0.5,
+      volume: -26,
+    }).connect(panR);
+    const ambLo = new Tone.PluckSynth({
+      attackNoise: 0.55, dampening: 2200, resonance: 0.82, release: 0.7,
+      volume: -30,
+    }).connect(panL);
+
+    audio = { dest, click, land, jackpot, absorb, absorbReverb, dropSyn, dropReverb,
+              ambHi, ambLo, ambVerb, panR, panL };
     // Re-apply current mute state once audio is initialised — the
     // shell may have flipped the toggle while audio was lazy.
     applySoundMute();
+    startAmbient();
     return audio;
+  }
+
+  // ── ambient sequencer ───────────────────────────────────────────────────
+  // C major pentatonic (semitones from C). Always consonant against
+  // itself in any combination — perfect for an aperiodic generator
+  // that can't accidentally land on a dissonance.
+  const PENTA = [0, 2, 4, 7, 9];
+  const A4_FREQ = 440;
+  const ROOT_MIDI = 60;          // C4
+  // Fibonacci-spaced ms intervals — the gap between successive notes
+  // is drawn from this set, picked by another Beatty sequence.
+  const AMB_INTERVALS = [890, 1440, 2330, 1440, 890];
+  const AMB_OFFSET    = 8;       // Fibonacci canon offset in step count
+  let ambStep_n = 0;
+  let ambTimer  = null;
+  function midiToFreq(midi) {
+    return A4_FREQ * Math.pow(2, (midi - 69) / 12);
+  }
+  function ambNoteAt(n) {
+    // Beatty sequence: floor(n × φ) mod 5. The Fibonacci word —
+    // aperiodic, self-similar, equidistributed. Combined with an
+    // octave choice from a second Beatty sequence (using φ²) the
+    // result is an infinite melody that never repeats but stays in
+    // the pentatonic harmonic field.
+    const idx  = Math.floor(n * PHI) % PENTA.length;
+    const oct  = Math.floor(n * PHI * PHI) % 3;     // 0/1/2
+    return ROOT_MIDI + PENTA[idx] + oct * 12;
+  }
+  function ambTick() {
+    if (!audio || !audio.ambHi) return;
+    if (!window.PACHI_SOUND_MUTED) {
+      try {
+        // Lead voice — mid octave from ambNoteAt
+        audio.ambHi.triggerAttack(midiToFreq(ambNoteAt(ambStep_n)));
+        // Canon voice — same sequence offset 8 steps back, octave below.
+        // Skips for the first 8 steps so the lead establishes alone.
+        if (ambStep_n >= AMB_OFFSET) {
+          audio.ambLo.triggerAttack(midiToFreq(ambNoteAt(ambStep_n - AMB_OFFSET) - 12));
+        }
+      } catch {}
+    }
+    ambStep_n++;
+    const next = AMB_INTERVALS[Math.floor(ambStep_n * PHI) % AMB_INTERVALS.length];
+    ambTimer = setTimeout(ambTick, next);
+  }
+  function startAmbient() {
+    if (ambTimer) return;
+    // Slight delay before the first note so the ambient fades in
+    // gracefully after the user's first DROP, not immediately on top
+    // of the press chord.
+    ambTimer = setTimeout(ambTick, 2100);
+  }
+  function stopAmbient() {
+    if (ambTimer) clearTimeout(ambTimer);
+    ambTimer = null;
   }
 
   // Mute / unmute everything by setting Tone.Destination.mute. Shell
@@ -1355,10 +1435,17 @@ export function mount(slot, ctx) {
     if (reason) console.warn("forceResetRound:", reason);
   }
   function onVisibilityChange() {
-    if (document.visibilityState !== "visible") return;
+    if (document.visibilityState !== "visible") {
+      // Pause the ambient sequencer when the tab is hidden so we don't
+      // pile up setTimeout drift when the user comes back. (It re-starts
+      // cleanly on resume below.)
+      stopAmbient();
+      return;
+    }
     if (Tone.context && Tone.context.state === "suspended") {
       Tone.context.resume().catch(() => {});
     }
+    if (audio) startAmbient();
     // Mobile / Farcaster mini-app: backgrounding can clear the canvas
     // backing store AND fail to auto-resume rAF. Rebuild + re-kick the
     // loops; the renderQueued/tickQueued flags ensure we don't end up
@@ -1379,6 +1466,7 @@ export function mount(slot, ctx) {
 
   return () => {
     mounted = false;
+    stopAmbient();
     ro.disconnect();
     totalRO.disconnect();
     window.removeEventListener("resize", positionTotalDigit);
@@ -1398,6 +1486,11 @@ export function mount(slot, ctx) {
         audio.absorbReverb?.dispose();
         audio.dropSyn?.dispose();
         audio.dropReverb?.dispose();
+        audio.ambHi?.dispose();
+        audio.ambLo?.dispose();
+        audio.ambVerb?.dispose();
+        audio.panR?.dispose();
+        audio.panL?.dispose();
         audio.dest.dispose();
       } catch {}
     }

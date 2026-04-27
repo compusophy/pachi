@@ -82,6 +82,15 @@ const ONBOARDING_ABI = [
     inputs: [{ type: "address" }], outputs: [{ type: "bool" }] },
   { type: "function", name: "nextAllowanceAt", stateMutability: "view",
     inputs: [{ type: "address" }], outputs: [{ type: "uint256" }] },
+  // Custom errors — without these viem can only show the raw selector
+  // ("...reverted with the following signature: 0x82b42900") which is
+  // useless to the user. With them, err.shortMessage / err.metaMessages
+  // include the error name + args so we can match on a clean string.
+  { type: "error", name: "AlreadyRegistered",   inputs: [] },
+  { type: "error", name: "NotRegistered",       inputs: [] },
+  { type: "error", name: "CannotInviteSelf",    inputs: [] },
+  { type: "error", name: "AllowanceCooldown",
+    inputs: [{ name: "secondsRemaining", type: "uint256" }] },
 ];
 
 const stage      = document.getElementById("stage");
@@ -540,25 +549,81 @@ modalClose.addEventListener("click", closeModal);
 modalEl.addEventListener("click", (e) => { if (e.target === modalEl) closeModal(); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
 
+// Format a future timestamp as a friendly relative duration ("4h 21m").
+function fmtRelTime(seconds) {
+  if (seconds <= 0) return "now";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  if (m > 0) return `${m}m`;
+  return `${s}s`;
+}
+
 async function claimDaily() {
   if (!(await checkVersion())) return;
+  // Pre-flight the cooldown view BEFORE submitting a tx that will just
+  // revert with AllowanceCooldown(secondsRemaining). Read-only,
+  // free, surfaces a clean "try again in 4h 21m" instead of a raw
+  // selector signature.
+  try {
+    const nextAt = await client.readContract({
+      address: PACHI_DIAMOND, abi: ONBOARDING_ABI,
+      functionName: "nextAllowanceAt", args: [account.address],
+    });
+    if (nextAt > 0n) {
+      const nowSec = BigInt(Math.floor(Date.now() / 1000));
+      const remain = nextAt > nowSec ? Number(nextAt - nowSec) : 0;
+      toast(`daily already claimed — try again in ${fmtRelTime(remain)}`);
+      return;
+    }
+  } catch (err) {
+    console.warn("nextAllowanceAt pre-check failed (continuing):", err);
+  }
+
   try {
     toast("claiming daily…");
     const hash = await client.writeContract({
       address: PACHI_DIAMOND, abi: ONBOARDING_ABI, functionName: "claimDailyAllowance",
+      gas: 300_000n,    // see pachi.js gas budget rationale — Tempo's
+                        // estimator under-shoots on cold-storage hits.
     });
     await client.waitForTransactionReceipt({ hash });
     setDisplayedRaw(await getBalance());
     toast("+1,000 ● claimed");
   } catch (err) {
-    const msg = err.shortMessage || err.message || "claim failed";
-    if (msg.toLowerCase().includes("cooldown") || msg.toLowerCase().includes("allowancecooldown")) {
-      toast("daily already claimed — try again tomorrow");
-    } else if (msg.toLowerCase().includes("notregistered")) {
-      toast("register first (will happen automatically next reload)");
+    // viem decodes the contract's custom errors (now that ONBOARDING_ABI
+    // declares them) and puts the name + args in shortMessage. Build the
+    // same diagnostic blob shape the play() error path uses so we can
+    // match on it consistently.
+    const blob = [
+      err.shortMessage || "",
+      err.message || "",
+      err.details || "",
+      (err.metaMessages || []).join(" "),
+      err.cause?.shortMessage || "",
+      err.cause?.message || "",
+    ].join(" ");
+    let userMsg;
+    if (/AllowanceCooldown/i.test(blob)) {
+      // Cooldown args may be parseable from cause.data, but the
+      // pre-flight above already covers the common path. This catches
+      // races (claim attempt mid-cooldown).
+      userMsg = "daily already claimed — try again tomorrow";
+    } else if (/NotRegistered/i.test(blob)) {
+      userMsg = "register first (will happen automatically next reload)";
+    } else if (/AlreadyRegistered/i.test(blob)) {
+      userMsg = "already registered";
+    } else if (/insufficient/i.test(blob)) {
+      userMsg = "not enough gas (AlphaUSD) — refresh to top up";
+    } else if (/revert/i.test(blob)) {
+      userMsg = "claim failed — copy details to debug";
     } else {
-      toast(msg);
+      userMsg = (err.shortMessage || err.message || "claim failed").slice(0, 80);
     }
+    toast(userMsg, 5200, { severity: "error", copyText:
+      `=== claimDaily error ===\n${new Date().toISOString()}\nwallet: ${account.address}\n\n${blob}\n\n${err.stack || ""}`
+    });
   }
 }
 
