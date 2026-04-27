@@ -8,8 +8,14 @@ import { LibPachi, IERC20 } from "./LibPachi.sol";
 /// to operate on AppStorage. Logic is identical (1.618% house edge,
 /// popcount-of-12-bits binomial slot distribution); the difference is
 /// where state lives (LibPachi.s() not contract storage).
+///
+/// MAX_BALLS bumped to 1000 (was 100) to back the ×1000 client option.
+/// Per-ball loop cost ~500-2000 gas; n=1000 worst case ~3-4M gas, well
+/// under typical block limits. Memory: 2× uint256 arrays of 1000 = 64KB,
+/// fine. Bumping this is a SEMANTICS change for play() so it goes with
+/// an appVersion bump — see MaxBallsUpgrade.s.sol.
 contract GameFacet {
-    uint256 public constant MAX_BALLS = 100;
+    uint256 public constant MAX_BALLS = 1000;
 
     event Played(
         address indexed player,

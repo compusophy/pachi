@@ -108,14 +108,17 @@ export function mount(slot, ctx) {
       </div>
       <div class="pachi-controls">
         <div class="pachi-pills" role="radiogroup">
-          <button class="pachi-pill" data-n="1"   aria-pressed="true">
+          <button class="pachi-pill"  data-n="1"    aria-pressed="true">
             <span class="ball-glyph">●</span><span class="x">×1</span>
           </button>
-          <button class="pachi-pill" data-n="10"  aria-pressed="false">
+          <button class="pachi-pill"  data-n="10"   aria-pressed="false">
             <span class="ball-glyph">●</span><span class="x">×10</span>
           </button>
-          <button class="pachi-pill" data-n="100" aria-pressed="false">
+          <button class="pachi-pill"  data-n="100"  aria-pressed="false">
             <span class="ball-glyph">●</span><span class="x">×100</span>
+          </button>
+          <button class="pachi-pill"  data-n="1000" aria-pressed="false">
+            <span class="ball-glyph">●</span><span class="x">×1000</span>
           </button>
         </div>
         <button class="pachi-btn" id="pbtn">DROP</button>
@@ -179,10 +182,11 @@ export function mount(slot, ctx) {
   function haptPill()   { hapt(3); }
   function haptDrop() {
     // DROP press intensifies with selectedN — same shape as the audio
-    // chord octave-scaling: ×1 modest, ×100 punchy.
-    if (selectedN === 100)     hapt([13, 8, 13, 8, 21]);
-    else if (selectedN === 10) hapt([8, 5, 8]);
-    else                       hapt(5);
+    // chord octave-scaling: ×1 modest, ×1000 thunderous.
+    if (selectedN === 1000)     hapt([34, 13, 21, 8, 34, 13, 55]);
+    else if (selectedN === 100) hapt([13, 8, 13, 8, 21]);
+    else if (selectedN === 10)  hapt([8, 5, 8]);
+    else                        hapt(5);
   }
   // Round-end haptic — fires ONCE in finishRound, picked from the
   // payout/stake ratio. Replaces the per-ball-land haptic which was
@@ -481,17 +485,27 @@ export function mount(slot, ctx) {
   // Fire the DROP chord. Cheap (3 voices, short envelope), idempotent
   // if audio not ready (silently no-ops). Called from the click handler
   // BEFORE the ball-flux flight starts so the tap feels immediately
-  // acknowledged — earlier the first sound was a peg click ~600ms in.
+  // acknowledged.
   // Octave scales with selectedN so heavier wagers ping HIGHER:
-  //   ×1   → G3 B3 D4   (low, modest)
-  //   ×10  → G4 B4 D5   (mid)
-  //   ×100 → G5 B5 D6   (bright, exciting)
-  // Stronger dopamine hit on the bigger commits without changing the
-  // chord identity (still G major triad, ascending).
+  //   ×1    → G3 B3 D4    (low, modest)
+  //   ×10   → G4 B4 D5    (mid)
+  //   ×100  → G5 B5 D6    (bright, exciting)
+  //   ×1000 → G5 B5 D6    + a low fifth-doubled octave below for weight
+  // The ×1000 voicing tops out at octave 5/6 (further up gets shrill on
+  // tiny phone speakers) but adds a doubled bass at G3+D4 so it FEELS
+  // bigger via low-end energy rather than higher pitch.
   function playDropChord() {
     if (!audio || !audio.dropSyn) return;
     try {
       const t = Tone.now();
+      if (selectedN === 1000) {
+        audio.dropSyn.triggerAttackRelease("G3",  0.4,  t);          // bass tonic
+        audio.dropSyn.triggerAttackRelease("D4",  0.35, t + 0.02);   // bass fifth
+        audio.dropSyn.triggerAttackRelease("G5",  0.3,  t + 0.04);   // top tonic
+        audio.dropSyn.triggerAttackRelease("B5",  0.3,  t + 0.07);
+        audio.dropSyn.triggerAttackRelease("D6",  0.3,  t + 0.10);
+        return;
+      }
       const oct = selectedN === 100 ? 5 : selectedN === 10 ? 4 : 3;
       audio.dropSyn.triggerAttackRelease(`G${oct}`,     0.25, t);
       audio.dropSyn.triggerAttackRelease(`B${oct}`,     0.25, t + 0.03);
@@ -719,9 +733,14 @@ export function mount(slot, ctx) {
 
   Matter.Events.on(engine, "collisionStart", (ev) => {
     const now = performance.now();
-    // Throttle ranges chosen so audio voices never stack: 12ms (was) was
-    // 83 triggers/sec — too many for end-of-round Tone.js voices.
-    const audioBudget = balls.length > 30 ? 80 : balls.length > 8 ? 40 : 25;
+    // Throttle ranges chosen so audio voices never stack. Extra tier
+    // for >300 balls (n=1000 rounds) — Tone.js polyphony chokes if we
+    // try to fire a click voice every 80ms with 600+ active collisions.
+    const audioBudget =
+      balls.length > 300 ? 300 :
+      balls.length > 100 ? 160 :
+      balls.length > 30  ? 80  :
+      balls.length > 8   ? 40  : 25;
     for (const pair of ev.pairs) {
       const a = pair.bodyA, b = pair.bodyB;
       const peg  = a.label === "peg" ? a : b.label === "peg" ? b : null;
@@ -1201,23 +1220,22 @@ export function mount(slot, ctx) {
         8_000, "simulate"
       );
 
-      // Pick a GENEROUS explicit gas budget. Tempo's gas estimator
-      // returned ~115k for n=1 plays, but on-chain survey shows real
-      // play(1) gas usage ranges 114k–1.86M (huge variance from cold-
-      // storage hits on stats counters: first play of the day, first
-      // entry to a new players-list slot, etc). The under-estimated
-      // txs ran out of gas mid-call and reverted with the user paying
-      // 100k gas for nothing.
+      // Pick a GENEROUS explicit gas budget. Tempo's estimator
+      // chronically under-shoots on cold-storage hits (stats counters,
+      // first-time-player slots), so we override.
       //
-      // Survey of last 8000 blocks of successful plays:
+      // Survey of last 8000 blocks of successful plays at v2:
       //   n=1   gasUsed range  113k – 1.86M  (avg 502k)
       //   n=10  gasUsed range  141k – 1.89M  (avg 360k)
       //   n=100 gasUsed range  401k – 406k   (avg 402k)
       //
-      // 2_500_000n is comfortable above the worst observed and well
-      // below typical block gas. Unused gas is refunded so over-budget
-      // costs nothing extra.
-      const gasBudget = 2_500_000n;
+      // The play() loop does ~1-2k gas per ball + ~200-1500k cold-path
+      // overhead. n=1000 worst case ~3M gas. Per-tier budgets give
+      // sufficient headroom while keeping the per-ball fee reasonable
+      // — unused gas is refunded so over-budget costs nothing extra.
+      const gasBudget = n >= 1000 ? 6_000_000n
+                       : n >= 100 ? 3_000_000n
+                       : 2_500_000n;
 
       // Simulate passed → safe to deduct.
       if (ctx.optimisticDeduct) ctx.optimisticDeduct(runningStakeRaw);
@@ -1269,13 +1287,18 @@ export function mount(slot, ctx) {
       if (!events.length) throw new Error("no Played event");
       const { paths, ballMults } = events[0].args;
 
-      // Steady stream — even per-ball cadence, NOT a Fibonacci-compressed
-      // bolus. Earlier the 100-ball drop launched all 100 within ~340ms
-      // which read as a single clump leaving the apex; the user explicitly
-      // wanted a continuous stream. A constant 34ms cadence (Fibonacci) ×
-      // n gives n=10→340ms, n=100→3.4s — visibly drip-fed regardless of
-      // size, and the apex ball stays the focal point of the stream.
-      const PER_BALL_MS = 34;
+      // Per-ball launch stagger — Fibonacci-derived but compressed for
+      // large n so a 1000-ball round doesn't take 34 seconds just to
+      // launch. Each tier targets a roughly similar visual flight
+      // duration regardless of count:
+      //   n=1   → 0ms          instant
+      //   n=10  → 34ms each   ~340ms total drip
+      //   n=100 → 21ms each  ~2.1s total
+      //   n=1000→ 5ms each    ~5s total flood
+      // The drop into the matter.js field is rate-limited by this AND
+      // by the per-ball flight time (540ms each), so balls don't all
+      // collide at the spawn point.
+      const PER_BALL_MS = n >= 1000 ? 5 : n >= 100 ? 21 : 34;
       const launchTimes = [];
       for (let i = 0; i < n; i++) launchTimes.push(i * PER_BALL_MS);
 
@@ -1628,12 +1651,14 @@ const PACHI_CSS = `
      gives the catch a clear visual end before the action area starts. */
   margin-top: 34px;
 }
-/* Pill bar — same width as DROP (233 / Fibonacci), each pill claims 1/3
-   via flex:1. Background neutral so the bar itself doesn't compete with
-   the active pill. */
+/* Pill bar — full width (matches the pyramid + catch column). All
+   pills claim 1/4 via flex:1 so ×1, ×10, ×100, ×1000 are equal width
+   regardless of label length. The bar itself stays neutral so it
+   doesn't compete with the active pill. */
 .pachi-pills {
   display: flex;
-  width: 233px;
+  width: 100%;
+  max-width: 610px;
   gap: 5px;
   padding: 5px;
   background: rgba(255,255,255,0.03);

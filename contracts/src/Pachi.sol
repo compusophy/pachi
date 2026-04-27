@@ -18,7 +18,7 @@ contract Pachi {
 
     uint256 public stake;     // per-ball stake
     uint256 public nonce;
-    uint256 public constant MAX_BALLS = 100;
+    uint256 public constant MAX_BALLS = 1000;   // legacy pre-diamond, kept in parity with GameFacet
 
     // 13-slot multiplier table (in bps, 10000 = 1.0x). Symmetric, edge-heavy.
     // Calibrated for 1.618% house edge (per-ball RTP = 98.382%) — the golden

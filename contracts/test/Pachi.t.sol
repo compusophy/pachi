@@ -58,9 +58,11 @@ contract PachiTest is Test {
     }
 
     function test_too_many_balls_reverts() public {
+        // MAX_BALLS bumped from 100 to 1000 alongside the ×1000 client
+        // option — this probes one above the new ceiling.
         vm.prank(player);
         vm.expectRevert(Pachi.BallsOutOfRange.selector);
-        pachi.play(101);
+        pachi.play(1001);
     }
 
     function test_slot_distribution_is_binomial_at_scale() public {

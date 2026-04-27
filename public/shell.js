@@ -29,7 +29,9 @@ export const PACHI_USD = "0x576da0a989d574a3f9568007daceea919db6c53b";
 export const PACHI_DIAMOND = "0x71e767bf661d6294c88953d640f0fc792a4c5086";
 // MUST match diamond's appVersion. Bump after any breaking facet upgrade.
 // See memory: project_pachi_versioning. Order: contract first, client second.
-export const APP_VERSION = 2;
+// v3: GameFacet replaced with MAX_BALLS=1000 (was 100) to back the ×1000
+//     pill. Bumped via MaxBallsUpgrade.s.sol on 2026-04-26.
+export const APP_VERSION = 3;
 const KEY_STORAGE = "pachi:burnerKey:v1";
 
 // `TOKEN` left exported for back-compat with cards/pachi.js — points at the
