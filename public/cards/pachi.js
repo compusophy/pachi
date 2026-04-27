@@ -161,9 +161,19 @@ export function mount(slot, ctx) {
   // audio and vibration. All patterns use pure Fibonacci ms values
   // (3, 5, 8, 13, 21, 34, 55) so the felt rhythm matches the
   // golden-ratio visual + audio language elsewhere in the card.
+  //
+  // 80ms throttle: navigator.vibrate REPLACES the currently-running
+  // pattern when called rapidly — so calling vibrate(jackpot) and 50ms
+  // later vibrate(tick) cuts the jackpot off and the user feels two
+  // fragments instead of one clean signal. Throttling keeps any
+  // in-flight pattern intact.
+  let lastHaptT = 0;
   function hapt(pattern) {
     if (window.PACHI_SOUND_MUTED) return;
     if (!navigator.vibrate) return;
+    const now = performance.now();
+    if (now - lastHaptT < 80) return;
+    lastHaptT = now;
     try { navigator.vibrate(pattern); } catch {}
   }
   function haptPill()   { hapt(3); }
@@ -173,6 +183,19 @@ export function mount(slot, ctx) {
     if (selectedN === 100)     hapt([13, 8, 13, 8, 21]);
     else if (selectedN === 10) hapt([8, 5, 8]);
     else                       hapt(5);
+  }
+  // Round-end haptic — fires ONCE in finishRound, picked from the
+  // payout/stake ratio. Replaces the per-ball-land haptic which was
+  // gated on balls.length<6 and produced a chaotic "buzz salvo" at the
+  // tail of every round when the last few balls landed in quick
+  // succession (each new vibrate call cancelled the previous one).
+  function haptRoundEnd(payoutRaw, stakeRaw) {
+    if (stakeRaw === 0n) return;
+    const ratio = Number(payoutRaw) / Number(stakeRaw);
+    if      (ratio >= 11) hapt([21, 13, 21, 13, 34, 55]);  // jackpot-feel
+    else if (ratio >=  3) hapt([13, 8, 13, 21]);            // big
+    else if (ratio >   1) hapt([8, 5, 8]);                  // small win
+    else                  hapt(5);                          // bust / breakeven
   }
 
   // ── ball-count selector ─────────────────────────────────────────────────
@@ -732,18 +755,12 @@ export function mount(slot, ctx) {
           ), 50);
       }
     }
-    if (balls.length < 6) {
-      // Fibonacci-rhythm haptics — felt rhythm matches the golden-ratio
-      // visuals. Routed through hapt() so the SOUND toggle controls
-      // haptics too. Skipped during big-burst rounds (>5 balls in
-      // flight) to avoid stacking vibrations into one long buzz.
-      let pattern;
-      if      (bps >= 800_000) pattern = [21, 13, 21, 13, 34, 55];  // 85× jackpot
-      else if (bps >= 100_000) pattern = [13, 8, 13, 21];            // 11× big
-      else if (bps >=  11_000) pattern = [8, 5, 8];                  // 1.1×+ small
-      else                     pattern = 5;                          // bust / sub-1×
-      hapt(pattern);
-    }
+    // No per-ball haptic. Earlier we fired a Fibonacci pattern on each
+    // landing under a balls.length<6 gate, but rapid landings at the
+    // tail of a round overlapped — navigator.vibrate replaces in-flight
+    // patterns when called quickly, producing a fragmented "buzz salvo"
+    // that didn't correlate with anything visible. The single
+    // haptRoundEnd() call in finishRound() carries the outcome cleanly.
 
     // Multiply at slot — emit M flux balls from the slot's center, each
     // flying slot → catch box → apex. M tracks the contract's INTEGER
@@ -923,6 +940,10 @@ export function mount(slot, ctx) {
       totalEl.classList.add("big");
       setTimeout(() => totalEl.classList.remove("big"), 900);
     }
+    // Single end-of-round haptic — picks pattern from payout/stake ratio.
+    // Replaces the per-ball-land haptic that fired chaotically as balls
+    // drained at the tail of a round.
+    haptRoundEnd(payoutRaw, runningStakeRaw);
     playInFlight = false;
     btnEl.disabled = false;
     if (ctx.refreshBalance) ctx.refreshBalance();
